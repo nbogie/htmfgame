@@ -157,7 +157,6 @@ stratFor :: StrategyName -> Strategy
 stratFor Best = pickBestMove
 stratFor Rnd = pickRandomMove
 
-
 allLegalMovesForPlayer :: Board -> Player -> [Move]
 allLegalMovesForPlayer b player = 
   concatMap (legalMovesFrom b) startPosns
@@ -216,9 +215,7 @@ pickBestMove b =
   then Nothing
   else case allLegalMovesForPlayer b (nextPlayer b) of
     [] -> Nothing
-    ms -> Just . snd . maximumBy (comparing fst) $ mapAnnotate (makeAndScore b aiScore) $ ms
-      where 
-        scoreMove m = aiScore $ makeMove b m
+    ms -> Just $ snd $ bestMove b ms
 
 -- from point of view of the player who made the last move
 aiScore :: Board -> Int
@@ -226,10 +223,13 @@ aiScore b = case isGameOver b of
   True -> if whoWon b == currentPlayer b then 1 * scoreForCurrentPlayer b else (-1)
   False -> case allLegalMovesForPlayer b (nextPlayer b) of
     [] -> negate $ aiScore (giveUpMove b)
-    ms -> negate $ fst $ maximumBy (comparing fst) $ mapAnnotate (makeAndScore b aiScore) $ ms
+    ms -> negate $ fst $ bestMove b ms
 
-makeAndScore :: Board -> (Board -> Int) -> Move -> Int
-makeAndScore b strategy m = strategy $ makeMove b m
+bestMove :: Board -> [Move] -> (Int, Move)
+bestMove b ms = maximumBy (comparing fst) $ mapAnnotate (makeAndScore b) $ ms
+
+makeAndScore :: Board -> Move -> Int
+makeAndScore b m = aiScore $ makeMove b m
 
 mapAnnotate :: (a -> b) -> [a] -> [(b, a)]
 mapAnnotate f = map (\x -> (f x, x))
