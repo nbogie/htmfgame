@@ -2,6 +2,9 @@ import Data.List (sort, maximumBy, find)
 import Data.Ord (comparing)
 import System( getArgs )
 import qualified Data.Map as M
+import System.Random
+import Shuffle
+
 data Position = Position Int Int deriving (Eq, Ord)
 instance Show Position where
   show (Position x y) = "(" ++ show x ++ ","++show y++")"
@@ -12,10 +15,12 @@ data Board = Board (Int,Int) Player ScoreMap PlayerFinishedMap PosStateMap deriv
 
 posStateMap :: Board -> PosStateMap
 posStateMap (Board _ _ _ _ m) = m
+setPosStateMap (Board a b c d e) m = (Board a b c d m) 
 
 nextPlayer :: Board -> Player
 nextPlayer (Board _ np _ _ _) = np
 currentPlayer = otherPlayer . nextPlayer
+allPlayers = [minBound .. maxBound]
 
 scoreMap :: Board -> ScoreMap
 scoreMap (Board _ _ scm _ _) = scm
@@ -61,6 +66,9 @@ nextPosition (Position x y) d = let (dx, dy) = offsets d in (Position (x + dx) (
 isAvailable :: Board -> Position  -> Bool
 isAvailable b p = isInBounds b p && isIcePresent b p && not (isPenguinPresent b p)
 
+availablePositions :: Board -> [Position]
+availablePositions b = [p | p <- M.keys (posStateMap b), isAvailable b p]
+
 posState :: Board -> Position -> PositionState
 posState b p = case M.lookup p (posStateMap b) of
   Just s -> s
@@ -85,20 +93,27 @@ legalMovesInDirection b origPos d =
     else []
   where nextPos = nextPosition origPos d
 
-initBoard w h = Board (w, h) Player1 initScoreMap initPlayerFinishedMap (initPositions w h)
-initPositions w h = foldl addPlayerAtPos onlyIceMap playerPositions
-  where onlyIceMap = M.fromList [(Position x y, startPosState x y) | x <- [1..w], y <- [1..h]]
-        startPosState x y = PositionState (Ice iceVal) Nothing
-          where iceVal = x * y `mod` 3 + 1
-        playerPositions = take 2 [(Player1, Position 1 3), (Player2, Position 2 3)]
+addRandomPlayers :: Board -> IO Board
+addRandomPlayers b = do
+  rndPosns <- shuffleIO (availablePositions b)
+  let playerPositions = zip (cycle allPlayers) (take 2 rndPosns)
+  let newPSM = foldl addPlayerAtPos (posStateMap b) playerPositions
+  return $ setPosStateMap b newPSM
+
+initRandomBoard :: Int -> Int -> IO Board
+initRandomBoard w h = do
+  rndNs <- fmap (randomRs (1,3)) getStdGen
+  let b = Board (w, h) Player1 initScoreMap initPFM (initPSM w h rndNs)
+  addRandomPlayers b
+  where 
+    initScoreMap      = M.fromList (zip allPlayers (repeat 0))
+    initPFM           = M.fromList (zip allPlayers (repeat False))
+    initPSM w h iceNs = M.fromList $ zip [Position x y | x <- [1..w], y <- [1..h]] (map mkpos iceNs)
+      where
+        mkpos v = PositionState (Ice v) Nothing
 
 addPlayerAtPos :: PosStateMap -> (Player, Position) -> PosStateMap
 addPlayerAtPos psm (player, position) = M.adjust (\(PositionState i p)-> PositionState i (Just player)) position psm
-
-initPlayerFinishedMap = M.fromList (zip allPlayers (repeat False))
-initScoreMap = M.fromList (zip allPlayers (repeat 0))
-allPlayers = [minBound .. maxBound]
-
 
 -- TODO: return a type which includes the possibility of IllegalMove
 makeMove :: Board -> Move -> Board
@@ -124,7 +139,6 @@ otherPlayer Player2 = Player1
 updateToNextPlayer :: Board -> Board
 updateToNextPlayer = updateNextPlayer otherPlayer
 
-
 incrementFishCount :: Player -> Int -> Board -> Board
 incrementFishCount player offset = updateScoreMap (M.adjust (+offset) player)
 
@@ -144,8 +158,9 @@ main = do
   args <- getArgs
   case args of
     [w,h,strat1,strat2,logLevel] -> do
+      b <- initRandomBoard (read w) (read h)
       putStrLn $ "Starting with strategies: " ++ strat1 ++ ", " ++ strat2
-      autoplay (read logLevel) (stratFor $ read strat1) (stratFor $ read strat2) $ initBoard (read w) (read h)
+      autoplay (read logLevel) (stratFor $ read strat1) (stratFor $ read strat2) $ b
     otherArgs -> error "Usage: prog width height strat1 strat2 (Debug|Info)"
 
 data Move = Move Position Position deriving (Eq)
@@ -253,13 +268,15 @@ autoplay logging strat otherStrat b = do
     else do
         debug $ displayBoard b
         case strat b of
-          Nothing -> (debug $ "Cannot play: "++ (show . nextPlayer) b ) >> (autoplay logging otherStrat strat $ giveUpMove b)
-          Just mv -> (debug $ show (nextPlayer b) ++ " making best move: " ++ show mv) >> autoplay logging otherStrat strat (makeMove b mv)
+          Nothing -> (debug $ "Cannot play: "++ (show . nextPlayer) b ) 
+                      >> (autoplay logging otherStrat strat $ giveUpMove b)
+          Just mv -> (debug $ show (nextPlayer b) ++ " making move: " ++ show mv) 
+                      >> autoplay logging otherStrat strat (makeMove b mv)
   where 
-    debug = log Debug
-    info = log Info
-    log level = if logging <= level 
-                  then putStrLn
-                  else const $ return ()
+    debug = log Debug; info = log Info
+    log level = if logging <= level then putStrLn else const $ return ()
+
 
 -- TODO: log game to file so curious situations can be replayed
+-- TODO: have the AI try to maximize the delta between player scores, 
+--       rather than the abs score of current player
