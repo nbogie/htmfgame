@@ -1,15 +1,10 @@
-{- 
-   Miscelaneous utility functions 
-   Pedro Vasconcelos, 2009
--}
-
 module Shuffle where
 import Random
-import Data.Array.MArray
 import Data.Array.IO
 
 --
 -- Knuth-Fisher-Yates shuffling algorithm
+-- Impl due to Pedro Vasconcelos
 --
 shuffleIO :: [a] -> IO [a]
 shuffleIO xs
@@ -24,4 +19,3 @@ shuffleIO xs
                         return (xs!!j)  | i<-[0..n]]
          }
     where n = length xs - 1
-                 
