@@ -8,46 +8,52 @@ import Shuffle
 data Position = Position Int Int deriving (Eq, Ord)
 instance Show Position where
   show (Position x y) = "(" ++ show x ++ ","++show y++")"
+
+type Strategy = (Board -> Maybe Move)
+data StrategyName = Best | Rnd deriving (Show, Read, Eq)
 type PosStateMap =(M.Map Position PositionState) 
 type ScoreMap =(M.Map Player Int) 
 type PlayerFinishedMap =(M.Map Player Bool) 
-data Board = Board (Int,Int) Player ScoreMap PlayerFinishedMap PosStateMap deriving (Show, Eq, Ord)
 
-posStateMap :: Board -> PosStateMap
-posStateMap (Board _ _ _ _ m) = m
-setPosStateMap (Board a b c d e) m = (Board a b c d m) 
-
-nextPlayer :: Board -> Player
-nextPlayer (Board _ np _ _ _) = np
-currentPlayer = otherPlayer . nextPlayer
-allPlayers = [minBound .. maxBound]
-
-scoreMap :: Board -> ScoreMap
-scoreMap (Board _ _ scm _ _) = scm
-
-playerFinishedMap :: Board -> PlayerFinishedMap
-playerFinishedMap (Board _ _ scm pfm _) = pfm
-
-height, width :: Board -> Int
-width  (Board (w,_) _ _ _ _) = w
-height (Board (_,h) _ _ _ _) = h
-
-updateNextPlayer :: (Player -> Player) -> Board -> Board
-updateNextPlayer fn (Board dim p scm pfm psm) = Board dim (fn p) scm pfm psm
-
-updatePosStateMap :: (PosStateMap -> PosStateMap) -> Board -> Board
-updatePosStateMap f (Board dim p scm pfm psm) = Board dim p scm pfm (f psm)
-
-updateScoreMap :: (ScoreMap -> ScoreMap) -> Board -> Board
-updateScoreMap f (Board dim p scm pfm psm) = Board dim p (f scm) pfm psm
-
-updatePlayerFinishedMap :: (PlayerFinishedMap -> PlayerFinishedMap) -> Board -> Board
-updatePlayerFinishedMap f (Board dim p scm pfm psm) = Board dim p scm (f pfm) psm
+data Board = Board { dimensions :: (Int,Int)
+                   , nextPlayer :: Player
+                   , scoreMap :: ScoreMap
+                   , playerFinishedMap :: PlayerFinishedMap
+                   , posStateMap :: PosStateMap 
+                   } deriving (Show, Eq, Ord)
 
 data PositionState = PositionState IceState (Maybe Player) deriving (Show, Eq, Ord)
 data IceState = NoIce | Ice Int deriving (Show, Eq, Ord)
-data Player = Player1| Player2 deriving (Show, Eq, Ord, Enum, Bounded)
 data Direction = N | E | S | W deriving (Show, Eq, Ord, Enum, Bounded)
+
+data Player = Player1| Player2 deriving (Show, Eq, Ord, Enum, Bounded)
+
+currentPlayer = otherPlayer . nextPlayer
+allPlayers = [minBound .. maxBound]
+
+data Move = Move Position Position deriving (Eq)
+instance Show Move where
+  show (Move p1 p2) = "Move " ++ show p1 ++ "->"++show p2
+
+data Logging = Debug | Info deriving (Eq, Ord, Enum, Bounded, Show, Read)
+
+height, width :: Board -> Int
+width b = fst (dimensions b)
+height b = snd (dimensions b)
+
+updateNextPlayer :: (Player -> Player) -> Board -> Board
+updateNextPlayer f b = b { nextPlayer = f $ nextPlayer b }
+
+updateScoreMap :: (ScoreMap -> ScoreMap) -> Board -> Board
+updateScoreMap f b = b { scoreMap = f $ scoreMap b }
+
+updatePlayerFinishedMap :: (PlayerFinishedMap -> PlayerFinishedMap) -> Board -> Board
+updatePlayerFinishedMap f b = b { playerFinishedMap = f $ playerFinishedMap b }
+
+updatePosStateMap :: (PosStateMap -> PosStateMap) -> Board -> Board
+updatePosStateMap f b = b { posStateMap = f $ posStateMap b }
+setPosStateMap b m = b { posStateMap = m }
+
 legalPositionsFrom :: Board -> Position -> [Position]
 legalPositionsFrom b p = concatMap (legalMovesInDirection b p) allDirections
 legalMovesFrom :: Board -> Position -> [Move]
@@ -63,9 +69,6 @@ offsets W = (-1, 0)
 nextPosition :: Position -> Direction -> Position
 nextPosition (Position x y) d = let (dx, dy) = offsets d in (Position (x + dx) (y + dy))
 
-isAvailable :: Board -> Position  -> Bool
-isAvailable b p = isInBounds b p && isIcePresent b p && not (isPenguinPresent b p)
-
 availablePositions :: Board -> [Position]
 availablePositions b = [p | p <- M.keys (posStateMap b), isAvailable b p]
 
@@ -73,6 +76,9 @@ posState :: Board -> Position -> PositionState
 posState b p = case M.lookup p (posStateMap b) of
   Just s -> s
   Nothing -> error $ "No position state in map at " ++ show p ++ " on board " ++ show b
+
+isAvailable :: Board -> Position  -> Bool
+isAvailable b p = isInBounds b p && isIcePresent b p && not (isPenguinPresent b p)
 
 isIcePresent b p = 
   case posState b p of
@@ -97,8 +103,7 @@ addRandomPlayers :: Board -> IO Board
 addRandomPlayers b = do
   rndPosns <- shuffleIO (availablePositions b)
   let playerPositions = zip (cycle allPlayers) (take 2 rndPosns)
-  let newPSM = foldl addPlayerAtPos (posStateMap b) playerPositions
-  return $ setPosStateMap b newPSM
+  return $ updatePosStateMap (\m -> foldl addPlayerAtPos m playerPositions) b
 
 initRandomBoard :: Int -> Int -> IO Board
 initRandomBoard w h = do
@@ -148,24 +153,10 @@ moveOffState (PositionState _ _) = PositionState NoIce Nothing
 addPenguinToState :: Player -> PositionState -> PositionState
 addPenguinToState player (PositionState iceState _) = PositionState iceState (Just player)
 
-data StrategyName = Best | Rnd deriving (Show, Read, Eq)
-
 stratFor :: StrategyName -> Strategy
 stratFor Best = pickBestMove
 stratFor Rnd = pickRandomMove
 
-main = do
-  args <- getArgs
-  case args of
-    [w,h,strat1,strat2,logLevel] -> do
-      b <- initRandomBoard (read w) (read h)
-      putStrLn $ "Starting with strategies: " ++ strat1 ++ ", " ++ strat2
-      autoplay (read logLevel) (stratFor $ read strat1) (stratFor $ read strat2) $ b
-    otherArgs -> error "Usage: prog width height strat1 strat2 (Debug|Info)"
-
-data Move = Move Position Position deriving (Eq)
-instance Show Move where
-  show (Move p1 p2) = "Move " ++ show p1 ++ "->"++show p2
 
 allLegalMovesForPlayer :: Board -> Player -> [Move]
 allLegalMovesForPlayer b player = 
@@ -185,8 +176,11 @@ isPenguinInPosState _ _ = False
 
 displayBoard :: Board -> String
 displayBoard b@(Board dim player scoreMap pfm posStateMap) = 
-  "Next: " ++ show player ++ ", Scores: " ++ show scoreMap ++ ", finished players: " ++ finMapStr  ++ "\n" ++ makeBoardGrid b
-  where finMapStr = show $ map fst . filter snd . M.assocs $ pfm
+    "Next to play " ++ show player 
+    ++ ", Finished players: " ++ finMapStr  
+    ++ "\n\tScores: " ++ show (M.assocs scoreMap) 
+    ++ "\n"++ makeBoardGrid b
+      where finMapStr = show $ map fst . filter snd . M.assocs $ pfm
 
 wrap n xs | length xs <= n = [xs]
 wrap n xs | otherwise      = take n xs : wrap n (drop n xs)
@@ -245,7 +239,6 @@ whoWon b = if s1 >= s2 then Player1 else Player2
     s1 = scoreFor b Player1
     s2 = scoreFor b Player2
 
-data Logging = Debug | Info deriving (Eq, Ord, Enum, Bounded, Show, Read)
 
 scoreForCurrentPlayer :: Board -> Int
 scoreForCurrentPlayer b = scoreFor b $ currentPlayer b
@@ -259,12 +252,11 @@ staticEval b p = length $ allLegalMovesForPlayer b p
 scoreFor :: Board -> Player -> Int
 scoreFor b p = (scoreMap b) M.! p
 
-type Strategy = (Board -> Maybe Move)
 
 autoplay :: Logging -> Strategy -> Strategy -> Board -> IO ()
 autoplay logging strat otherStrat b = do
   if allPlayersFinished b
-    then info $ "All players finished - game over.  " ++ displayBoard b
+    then info $ "All players finished - game over.\n" ++ displayBoard b
     else do
         debug $ displayBoard b
         case strat b of
@@ -276,6 +268,14 @@ autoplay logging strat otherStrat b = do
     debug = log Debug; info = log Info
     log level = if logging <= level then putStrLn else const $ return ()
 
+main = do
+  args <- getArgs
+  case args of
+    [w,h,strat1,strat2,logLevel] -> do
+      b <- initRandomBoard (read w) (read h)
+      putStrLn $ "Starting with strategies: " ++ strat1 ++ ", " ++ strat2
+      autoplay (read logLevel) (stratFor $ read strat1) (stratFor $ read strat2) $ b
+    otherArgs -> error "Usage: prog width height strat1 strat2 (Debug|Info)"
 
 -- TODO: log game to file so curious situations can be replayed
 -- TODO: have the AI try to maximize the delta between player scores, 
