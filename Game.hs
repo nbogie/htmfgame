@@ -10,7 +10,6 @@ type ScoreMap =(M.Map Player Int)
 type PlayerFinishedMap =(M.Map Player Bool) 
 data Board = Board (Int,Int) Player ScoreMap PlayerFinishedMap PosStateMap deriving (Show, Eq, Ord)
 
-
 posStateMap :: Board -> PosStateMap
 posStateMap (Board _ _ _ _ m) = m
 
@@ -105,10 +104,19 @@ allPlayers = [minBound .. maxBound]
 makeMove :: Board -> Move -> Board
 makeMove b (Move p1 p2) = 
   case map (posState b) [p1,p2] of
-    [(PositionState (Ice fishOnIce) (Just player)), ps2@(PositionState (Ice _) Nothing)] ->  
-          (updateToNextPlayer . incrementFishCount player fishOnIce ) $ 
-          updatePosStateMap (M.adjust moveOffState p1 . M.adjust (addPenguinToState player) p2) b
+    [(PositionState (Ice fishOnIce) (Just player)), ps2@(PositionState (Ice fishOnIceP2) Nothing)] ->  
+          (removeAnyLostPenguins p2 player fishOnIceP2) . 
+          (updateToNextPlayer . incrementFishCount player fishOnIce ) . 
+          updatePosStateMap (M.adjust moveOffState p1 . M.adjust (addPenguinToState player) p2) $ b
     [ps1Bad, ps2Bad] -> error $ show ("Bad position states ", ps1Bad, ", ", ps2Bad, " at ", p1, " and ", p2)
+
+-- update score, AND remove penguin
+-- TODO: also consider other (or just other adjacent) penguins who we might have blocked in, too
+removeAnyLostPenguins :: Position -> Player -> Int -> Board -> Board
+removeAnyLostPenguins p player fishOnIce b | null (legalMovesFrom b p) = 
+  incrementFishCount player fishOnIce .  
+  updatePosStateMap (M.adjust moveOffState p . M.adjust (addPenguinToState player) p) $ b
+removeAnyLostPenguins _ _ _ b |otherwise = b --do nothing
 
 otherPlayer Player1 = Player2
 otherPlayer Player2 = Player1
@@ -227,9 +235,17 @@ data Logging = Debug | Info deriving (Eq, Ord, Enum, Bounded, Show, Read)
 scoreForCurrentPlayer :: Board -> Int
 scoreForCurrentPlayer b = scoreFor b $ currentPlayer b
 
+staticEval :: Board -> Player -> Int
+staticEval b p = length $ allLegalMovesForPlayer b p 
+-- TODO: consider current fish score totals, remaining connected fish score totals
+--       total connected fish
+--       tiles connected more than once
+
 scoreFor :: Board -> Player -> Int
 scoreFor b p = (scoreMap b) M.! p
+
 type Strategy = (Board -> Maybe Move)
+
 autoplay :: Logging -> Strategy -> Strategy -> Board -> IO ()
 autoplay logging strat otherStrat b = do
   if allPlayersFinished b
@@ -237,8 +253,8 @@ autoplay logging strat otherStrat b = do
     else do
         debug $ displayBoard b
         case strat b of
-          Nothing -> (debug $ "Found that Player cannot play: "++ (show . nextPlayer) b ) >> (autoplay logging otherStrat strat $ giveUpMove b)
-          Just mv -> (debug $ "Player's best move: " ++ show mv) >> autoplay logging otherStrat strat (makeMove b mv)
+          Nothing -> (debug $ "Cannot play: "++ (show . nextPlayer) b ) >> (autoplay logging otherStrat strat $ giveUpMove b)
+          Just mv -> (debug $ show (nextPlayer b) ++ " making best move: " ++ show mv) >> autoplay logging otherStrat strat (makeMove b mv)
   where 
     debug = log Debug
     info = log Info
@@ -246,3 +262,4 @@ autoplay logging strat otherStrat b = do
                   then putStrLn
                   else const $ return ()
 
+-- TODO: log game to file so curious situations can be replayed
