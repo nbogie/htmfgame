@@ -182,11 +182,11 @@ displayBoard b@(Board dim player scoreMap pfm posStateMap) =
     ++ "\n"++ makeBoardGrid b
       where finMapStr = show $ map fst . filter snd . M.assocs $ pfm
 
-wrap n xs | length xs <= n = [xs]
-wrap n xs | otherwise      = take n xs : wrap n (drop n xs)
-
-
 makeBoardGrid b = unlines $ map concat $ wrap (width b) $ map (displayPosState . posState b) (allPositions b)
+  where
+    wrap n xs | length xs <= n  = [xs]
+    wrap n xs | otherwise       = take n xs : wrap n (drop n xs)
+
 displayPosState :: PositionState -> String
 displayPosState (PositionState (Ice val) p) = show val ++ (playerSym p) ++ " "
   where playerSym Nothing = " "
@@ -251,7 +251,6 @@ staticEval b p = length $ allLegalMovesForPlayer b p
 
 scoreFor :: Board -> Player -> Int
 scoreFor b p = (scoreMap b) M.! p
-
 
 autoplay :: Logging -> Strategy -> Strategy -> Board -> IO ()
 autoplay logging strat otherStrat b = do
