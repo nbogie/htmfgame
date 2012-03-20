@@ -1,3 +1,5 @@
+module Game where
+
 import Data.List (sort, maximumBy, find, intercalate)
 import Data.Ord (comparing)
 import System( getArgs )
@@ -119,6 +121,15 @@ initRandomBoard w h = do
 
 addPlayerAtPos :: PosStateMap -> (Player, Position) -> PosStateMap
 addPlayerAtPos psm (player, position) = M.adjust (\(PositionState i p)-> PositionState i (Just player)) position psm
+
+makeBestMoveIfUnfinished :: Board -> Board
+makeBestMoveIfUnfinished b = makeMoveIfUnfinished pickBestMove b
+makeRandomMoveIfUnfinished :: Board -> Board
+makeRandomMoveIfUnfinished b = makeMoveIfUnfinished pickRandomMove b
+
+makeMoveIfUnfinished strat b = case strat b of
+  Nothing -> b
+  Just m -> makeMove b m
 
 -- TODO: return a type which includes the possibility of IllegalMove
 makeMove :: Board -> Move -> Board
@@ -278,12 +289,13 @@ showResultPlain b = winner b ++ " " ++ scores b
     scores :: Board -> String
     scores b = intercalate " " $ map show $ scoresForPlayers b
 
-autoplay :: Logging -> Strategy -> Strategy -> Board -> IO ()
+autoplay :: Logging -> Strategy -> Strategy -> Board -> IO Board
 autoplay logging strat otherStrat b = do
   if allPlayersFinished b
     then do
       info $ "All players finished - game over.\n" ++ displayBoard b
       >> log Silent (showResultPlain b)
+      >> return b
     else do
         debug $ displayBoard b
         case strat b of
@@ -295,7 +307,8 @@ autoplay logging strat otherStrat b = do
     debug = log Debug; info = log Info
     log level = if logging <= level then putStrLn else const $ return ()
 
-main = do
+main = nonguimain
+nonguimain = do
   args <- getArgs
   case args of
     [w,h,strat1,strat2,logLevel] -> do
