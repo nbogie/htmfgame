@@ -6,7 +6,7 @@ import System.Environment
 import Data.List
 import Data.Function
 import Data.Maybe (fromJust)
-
+import qualified Data.Map as M
 import Game hiding (main)
 
 type World = Int
@@ -18,12 +18,14 @@ guimain = do
           "Hey That's My Fish - Haskell UI" --name of the window
           (800,700) -- initial size of the window
           (10, 10) -- initial position of the window
-          white   -- background colour
+          backgroundColor   -- background colour
           30 -- number of simulation steps to take for each second of real time
           (b,bs) -- the initial world
           drawState -- A function to convert the world into a picture
           handleInput -- A function to handle input events
           (const id)
+
+backgroundColor = dark $ dark $ dark blue -- makeColor8 200 200 200 100
 
 handleInput :: Event -> GS -> GS
 handleInput (EventKey (Char c)               Down  _   (x,y))  b = handleChar c b
@@ -39,15 +41,53 @@ handleChar _ b = b
 drawState :: (Board,[Board])-> Picture
 drawState (b,_) = Pictures $ [
   drawBoard b 
-  , Color green $ Line [(10,20), (200,300)]
   ]
 
-drawBoard b = Pictures $ [
-                 drawLines (-400,300) ((lines . displayBoard) b)
-               , drawLines (-400,-100) ["hello", "world"] ]
+drawBoard b = 
+  Pictures $ [drawIceState is | is <- M.assocs (posStateMap b)]
+          ++ [ drawLines white (-400,300) ((lines . displayBoard) b)
+             , drawLines white (-400,-100) ["hello", "world"] ]
+  where 
+    (w,h) = dimensions b
 
-drawLines :: (Float, Float) -> [String] -> Picture
-drawLines (x,y) ls = Translate x y $ 
+iceState :: PositionState -> IceState
+iceState (PositionState istate _) = istate
+
+drawIceState :: (Position,PositionState) -> Picture
+drawIceState (p,(PositionState ist playerM)) = Translate x y $ Pictures $ [iceOrSea, fish ist, picOrNone penguin playerM]
+  where 
+    iceOrSea = Color (colorForIceState ist) $rectangleSolid 30 30
+    picOrNone :: (a-> Picture) -> Maybe a -> Picture 
+    picOrNone f (Just v) = f v
+    picOrNone f Nothing = Pictures []
+    penguin :: Player -> Picture
+    penguin player = Pictures $ [
+      Color black $ rectangleSolid 15 25
+      , Color (colorForPlayer player) $ rectangleSolid 7 18  ]
+    (x,y) = toUiPos p
+
+fish (Ice fc) = case fc of
+  1 -> Color green $ rectangleSolid 25 20
+  2 -> Color orange $ rectangleSolid 20 10
+  3 -> Color magenta $ rectangleSolid 15 20
+  other -> Color red $ textAt 0 0 (show fc)
+fish _ = Pictures []
+-- Color orange $ rectangleSolid 20 5
+
+colorForPlayer Player1 = yellow
+colorForPlayer Player2 = red
+
+colorForIceState :: IceState -> Color
+colorForIceState NoIce = blue
+colorForIceState (Ice n) = white
+
+type UiPosition = (Float, Float)
+
+toUiPos :: Position -> UiPosition
+toUiPos (Position x y) = (fromIntegral x*40,fromIntegral y*40)
+
+drawLines :: Color -> (Float, Float) -> [String] -> Picture
+drawLines c (x,y) ls = Translate x y $  Color c $
                Pictures $ map drawLine $ zip ls [1..]
   where drawLine (l,y) = textAt 10 (y*(-20)) l
 

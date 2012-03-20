@@ -128,7 +128,7 @@ makeRandomMoveIfUnfinished :: Board -> Board
 makeRandomMoveIfUnfinished b = makeMoveIfUnfinished pickRandomMove b
 
 makeMoveIfUnfinished strat b = case strat b of
-  Nothing -> b
+  Nothing -> giveUpMove b
   Just m -> makeMove b m
 
 -- TODO: return a type which includes the possibility of IllegalMove
@@ -265,7 +265,7 @@ scoreForCurrentPlayer :: Board -> Int
 scoreForCurrentPlayer b = scoreFor b $ currentPlayer b
 
 staticEval :: Board -> Player -> Int
-staticEval b p = avMovesScore
+staticEval b p = avMovesScore + fishScoreDelta
  where
   me = p
   you = otherPlayer p
