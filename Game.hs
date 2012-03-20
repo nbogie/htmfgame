@@ -1,4 +1,4 @@
-import Data.List (sort, maximumBy, find)
+import Data.List (sort, maximumBy, find, intercalate)
 import Data.Ord (comparing)
 import System( getArgs )
 import qualified Data.Map as M
@@ -35,7 +35,7 @@ data Move = Move Position Position deriving (Eq)
 instance Show Move where
   show (Move p1 p2) = "Move " ++ show p1 ++ "->"++show p2
 
-data Logging = Debug | Info deriving (Eq, Ord, Enum, Bounded, Show, Read)
+data Logging = Debug | Info | Silent deriving (Eq, Ord, Enum, Bounded, Show, Read)
 
 height, width :: Board -> Int
 width b = fst (dimensions b)
@@ -215,26 +215,36 @@ pickBestMove b =
   then Nothing
   else case allLegalMovesForPlayer b (nextPlayer b) of
     [] -> Nothing
-    ms -> Just $ snd $ bestMove b ms
+    ms -> Just $ snd $ bestMove defaultDepth b ms
+
+defaultDepth = 4
+
+bestMove :: Depth -> Board -> [Move] -> (Int, Move)
+bestMove depth b ms = maximumBy (comparing fst) $ mapAnnotate (aiScore depth . makeMove b) $ ms
 
 -- from point of view of the player who made the last move
-aiScore :: Board -> Int
-aiScore b = case isGameOver b of
-  True -> if whoWon b == currentPlayer b then 1 * scoreForCurrentPlayer b else (-1)
-  False -> case allLegalMovesForPlayer b (nextPlayer b) of
-    [] -> negate $ aiScore (giveUpMove b)
-    ms -> negate $ fst $ bestMove b ms
+aiScore :: Int -> Board -> Int
+aiScore depth b = case isGameOver b of
+  True -> case whoWon b of
+    Just winner | winner == currentPlayer b -> 1000 * scoreForCurrentPlayer b
+                | otherwise                 -> (-1000)
+    Nothing                                 -> 0
+  False -> 
+      if depth == 0 
+        then staticEval b (currentPlayer b)
+        else case allLegalMovesForPlayer b (nextPlayer b) of
+    [] -> negate $ aiScore (depth-1) (giveUpMove b)
+    ms -> negate $ fst $ bestMove (depth-1) b ms
 
-bestMove :: Board -> [Move] -> (Int, Move)
-bestMove b ms = maximumBy (comparing fst) $ mapAnnotate (makeAndScore b) $ ms
-
-makeAndScore :: Board -> Move -> Int
-makeAndScore b m = aiScore $ makeMove b m
+type Depth = Int
 
 mapAnnotate :: (a -> b) -> [a] -> [(b, a)]
 mapAnnotate f = map (\x -> (f x, x))
-    
-whoWon b = if s1 >= s2 then Player1 else Player2
+
+whoWon ::  Board -> Maybe Player
+whoWon b = if s1==s2 
+            then Nothing 
+            else if s1 > s2 then Just Player1 else Just Player2
   where 
     s1 = scoreFor b Player1
     s2 = scoreFor b Player2
@@ -244,7 +254,14 @@ scoreForCurrentPlayer :: Board -> Int
 scoreForCurrentPlayer b = scoreFor b $ currentPlayer b
 
 staticEval :: Board -> Player -> Int
-staticEval b p = length $ allLegalMovesForPlayer b p 
+staticEval b p = avMovesScore
+ where
+  me = p
+  you = otherPlayer p
+  fishScoreDelta = let [mine, his] = map (scoreFor b) [me, you] in mine - his
+  avMovesScore = let [mine, his] = map (length . allLegalMovesForPlayer b) [me, you]
+                 in mine - his
+
 -- TODO: consider current fish score totals, remaining connected fish score totals
 --       total connected fish
 --       tiles connected more than once
@@ -252,10 +269,21 @@ staticEval b p = length $ allLegalMovesForPlayer b p
 scoreFor :: Board -> Player -> Int
 scoreFor b p = (scoreMap b) M.! p
 
+scoresForPlayers :: Board -> [Int]
+scoresForPlayers b = map (scoreFor b) allPlayers
+showResultPlain :: Board -> String
+showResultPlain b = winner b ++ " " ++ scores b
+  where
+    winner b = maybe "Draw" show (whoWon b)
+    scores :: Board -> String
+    scores b = intercalate " " $ map show $ scoresForPlayers b
+
 autoplay :: Logging -> Strategy -> Strategy -> Board -> IO ()
 autoplay logging strat otherStrat b = do
   if allPlayersFinished b
-    then info $ "All players finished - game over.\n" ++ displayBoard b
+    then do
+      info $ "All players finished - game over.\n" ++ displayBoard b
+      >> log Silent (showResultPlain b)
     else do
         debug $ displayBoard b
         case strat b of
@@ -271,10 +299,13 @@ main = do
   args <- getArgs
   case args of
     [w,h,strat1,strat2,logLevel] -> do
+      let logging = (read logLevel)
       b <- initRandomBoard (read w) (read h)
-      putStrLn $ "Starting with strategies: " ++ strat1 ++ ", " ++ strat2
-      autoplay (read logLevel) (stratFor $ read strat1) (stratFor $ read strat2) $ b
-    otherArgs -> error "Usage: prog width height strat1 strat2 (Debug|Info)"
+      if logging <= Info
+        then putStrLn $ "Starting with strategies: " ++ strat1 ++ ", " ++ strat2
+        else return ()
+      autoplay logging (stratFor $ read strat1) (stratFor $ read strat2) $ b
+    otherArgs -> error "Usage: prog width height strat1 strat2 (Debug|Info|Silent)"
 
 -- TODO: log game to file so curious situations can be replayed
 -- TODO: have the AI try to maximize the delta between player scores, 
