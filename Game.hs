@@ -265,10 +265,10 @@ staticEval b p = avMovesScore + fishScoreDelta
  where
   me = p
   you = otherPlayer p
-  fishScoreDelta = let [mine, his] = map (scoreFor b) [me, you] in mine - his
-  avMovesScore = let [mine, his] = map (length . allLegalMovesForPlayer b) [me, you]
-                 in mine - his
+  fishScoreDelta = difference (scoreFor b) (me, you)
+  avMovesScore   = difference (length . allLegalMovesForPlayer b) (me, you)
 
+difference f (a,b) = f a - f b
 -- TODO: consider current fish score totals, remaining connected fish score totals
 --       total connected fish
 --       tiles connected more than once
