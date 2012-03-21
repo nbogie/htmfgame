@@ -6,10 +6,9 @@ by a Haskell beginner.  Look elsewhere for a proper version.
 Limitations:
 ============
 
-No user-play yet.  Just AI vs AI.
+No user-play yet.  Just AI vs AI (though the player can tell the computer to move intelligently or randomly, at each step).
 
 AI is very dumb.  It is minimax, with the roughest possible static eval.
-No hex grid yet, just square grid.
 
 Initial player placement is done at random, rather than played out interactively.
 
