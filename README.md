@@ -15,4 +15,5 @@ Initial player placement is done at random, rather than played out interactively
 
 Screenshots:
 ============
-![screenshot of early gui](htmfgame/blob/master/screenshots/first_gui.png)
+![screenshot of early gui](https://github.com/nbogie/htmfgame/raw/master/screenshots/first_gui.png)
+                           
