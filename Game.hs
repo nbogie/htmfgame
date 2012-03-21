@@ -1,6 +1,6 @@
 module Game where
 
-import Data.List (sort, maximumBy, find, intercalate)
+import Data.List (maximumBy, intercalate)
 import Data.Ord (comparing)
 import System( getArgs )
 import qualified Data.Map as M
@@ -114,19 +114,20 @@ addRandomPlayers b = do
 initRandomBoard :: Int -> Int -> IO Board
 initRandomBoard w h = do
   rndNs <- fmap (randomRs (1,3)) getStdGen
-  let b = Board (w, h) Player1 initScoreMap initPFM (initPSM w h rndNs)
+  let b = Board (w, h) Player1 initScoreMap initPFM (initPSM rndNs)
   addRandomPlayers b
   where 
-    initScoreMap      = M.fromList (zip allPlayers (repeat 0))
-    initPFM           = M.fromList (zip allPlayers (repeat False))
-    initPSM w h iceNs = M.fromList (zip hexGrid (map mkpos iceNs))
+    initScoreMap   = M.fromList (zip allPlayers (repeat 0))
+    initPFM        = M.fromList (zip allPlayers (repeat False))
+    initPSM iceNs  = M.fromList (zip hexGrid (map mkpos iceNs))
       where
         hexGrid = [Position x y | y <- [1..h], x<-[1..2*w], 
                                   (x+y) `mod` 2 == 0]
         mkpos v = PositionState (Ice v) Nothing
 
 addPlayerAtPos :: PosStateMap -> (Player, Position) -> PosStateMap
-addPlayerAtPos psm (player, position) = M.adjust (\(PositionState i p)-> PositionState i (Just player)) position psm
+addPlayerAtPos psm (player, position) = 
+  M.adjust (\(PositionState i _p)-> PositionState i (Just player)) position psm
 
 makeBestMoveIfUnfinished :: Board -> Board
 makeBestMoveIfUnfinished b = makeMoveIfUnfinished pickBestMove b
@@ -140,12 +141,15 @@ makeMoveIfUnfinished strat b = case strat b of
 -- TODO: return a type which includes the possibility of IllegalMove
 makeMove :: Board -> Move -> Board
 makeMove b (Move p1 p2) = 
-  case map (posState b) [p1,p2] of
-    [(PositionState (Ice fishOnIce) (Just player)), ps2@(PositionState (Ice fishOnIceP2) Nothing)] ->  
+  case diag (posState b) (p1,p2) of
+    ((PositionState (Ice fishOnIce) (Just player)), 
+     (PositionState (Ice fishOnIceP2) Nothing)) ->  
           (removeAnyLostPenguins p2 player fishOnIceP2) . 
           (updateToNextPlayer . incrementFishCount player fishOnIce ) . 
           updatePosStateMap (M.adjust moveOffState p1 . M.adjust (addPenguinToState player) p2) $ b
-    [ps1Bad, ps2Bad] -> error $ show ("Bad position states ", ps1Bad, ", ", ps2Bad, " at ", p1, " and ", p2)
+    (ps1Bad, ps2Bad) -> error $ show ("Bad position states ", ps1Bad, ", ", ps2Bad, " at ", p1, " and ", p2)
+
+diag f (x,y) = (f x, f y)
 
 -- update score, AND remove penguin
 -- TODO: also consider other (or just other adjacent) penguins who we might have blocked in, too
@@ -187,11 +191,11 @@ isPenguinInPosState player (PositionState _ (Just actualPlayer)) = player == act
 isPenguinInPosState _ _ = False
 
 displayBoard :: Board -> String
-displayBoard b@(Board dim player scoreMap pfm posStateMap) = 
-    "Next to play " ++ show player 
+displayBoard b = 
+    "Next to play " ++ show (nextPlayer b) 
     ++ ", Finished players: " ++ finMapStr  
-    ++ "\n\tScores: " ++ show (M.assocs scoreMap) 
-      where finMapStr = show $ map fst . filter snd . M.assocs $ pfm
+    ++ "\n\tScores: " ++ show (M.assocs (scoreMap b))
+      where finMapStr = show $ map fst . filter snd . M.assocs $ (playerFinishedMap b)
 
 displayPosState :: PositionState -> String
 displayPosState (PositionState (Ice val) p) = show val ++ (playerSym p) ++ " "
@@ -279,18 +283,17 @@ scoreFor b p = (scoreMap b) M.! p
 scoresForPlayers :: Board -> [Int]
 scoresForPlayers b = map (scoreFor b) allPlayers
 showResultPlain :: Board -> String
-showResultPlain b = winner b ++ " " ++ scores b
+showResultPlain b = winner ++ " " ++ scores
   where
-    winner b = maybe "Draw" show (whoWon b)
-    scores :: Board -> String
-    scores b = intercalate " " $ map show $ scoresForPlayers b
+    winner = maybe "Draw" show (whoWon b)
+    scores = intercalate " " $ map show $ scoresForPlayers b
 
 autoplay :: Logging -> Strategy -> Strategy -> Board -> IO Board
 autoplay logging strat otherStrat b = do
   if allPlayersFinished b
     then do
       info $ "All players finished - game over.\n" ++ displayBoard b
-      >> log Silent (showResultPlain b)
+      >> logIt Silent (showResultPlain b)
       >> return b
     else do
         debug $ displayBoard b
@@ -300,8 +303,8 @@ autoplay logging strat otherStrat b = do
           Just mv -> (debug $ show (nextPlayer b) ++ " making move: " ++ show mv) 
                       >> autoplay logging otherStrat strat (makeMove b mv)
   where 
-    debug = log Debug; info = log Info
-    log level = if logging <= level then putStrLn else const $ return ()
+    debug = logIt Debug; info = logIt Info
+    logIt level = if logging <= level then putStrLn else const $ return ()
 
 main = nonguimain
 nonguimain = do
@@ -314,7 +317,7 @@ nonguimain = do
         then putStrLn $ "Starting with strategies: " ++ strat1 ++ ", " ++ strat2
         else return ()
       autoplay logging (stratFor $ read strat1) (stratFor $ read strat2) $ b
-    otherArgs -> error "Usage: prog width height strat1 strat2 (Debug|Info|Silent)"
+    _args -> error "Usage: prog width height strat1 strat2 (Debug|Info|Silent)"
 
 -- TODO: implement the AI so it's not moronic.
 -- TODO: log game to file so curious situations can be replayed.

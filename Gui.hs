@@ -1,11 +1,6 @@
 {-# LANGUAGE PatternGuards #-}
 module Gui where
 import Graphics.Gloss.Interface.Game
-import Graphics.Gloss.Data.Extent
-import System.Environment
-import Data.List
-import Data.Function
-import Data.Maybe (fromJust)
 import qualified Data.Map as M
 import Game hiding (main)
 
@@ -13,7 +8,7 @@ type World = Int
 main = guimain
 guimain = do
   b <- initRandomBoard 6 6
-  bs <- mapM (const $ initRandomBoard 6 6) [1..4]
+  bs <- mapM (const $ initRandomBoard 6 6) ([1..4]::[Int])
   gameInWindow 
           "Hey That's My Fish - Haskell UI" --name of the window
           (800,700) -- initial size of the window
@@ -28,14 +23,14 @@ guimain = do
 backgroundColor = dark $ dark $ dark blue -- makeColor8 200 200 200 100
 
 handleInput :: Event -> GS -> GS
-handleInput (EventKey (Char c)               Down  _   (x,y))  b = handleChar c b
-handleInput (EventKey (MouseButton LeftButton) Down  _ (x,y))  b = b
+handleInput (EventKey (Char c)               Down  _   _pos)  b = handleChar c b
+handleInput (EventKey (MouseButton LeftButton) Down  _ _pos)  b = b
 handleInput _ b = b
 type GS = (Board,[Board])
 handleChar :: Char -> GS -> GS
 handleChar 'r' (b,bs)             = (makeRandomMoveIfUnfinished b, bs)
 handleChar 'b' (b,bs)             = (makeBestMoveIfUnfinished b, bs)
-handleChar 'n' (b,(nextb:others)) = (nextb,others)
+handleChar 'n' (_b,(nextb:others)) = (nextb,others)
 handleChar _ b = b
  
 drawState :: (Board,[Board])-> Picture
@@ -57,7 +52,7 @@ drawIceState (p,(PositionState ist playerM)) =
     iceOrSea = Color (colorForIceState ist) $ drawHex side
     picOrNone :: (a-> Picture) -> Maybe a -> Picture 
     picOrNone f (Just v) = f v
-    picOrNone f Nothing = Pictures []
+    picOrNone _ Nothing = Pictures []
     penguin :: Player -> Picture
     penguin player = Pictures $ [
       Color black $ rectangleSolid 15 25
@@ -68,16 +63,15 @@ fish (Ice fc) = case fc of
   1 -> Color green $ rectangleSolid 25 20
   2 -> Color orange $ rectangleSolid 20 10
   3 -> Color magenta $ rectangleSolid 15 20
-  other -> Color red $ textAt 0 0 (show fc)
+  other -> Color red $ textAt 0 0 (show other)
 fish _ = Pictures []
--- Color orange $ rectangleSolid 20 5
 
 colorForPlayer Player1 = yellow
 colorForPlayer Player2 = red
 
 colorForIceState :: IceState -> Color
 colorForIceState NoIce = blue
-colorForIceState (Ice n) = white
+colorForIceState (Ice _) = white
 
 type UiPosition = (Float, Float)
 
@@ -87,7 +81,7 @@ toUiPos (Position x y) = (fromIntegral x*xSpacing,fromIntegral y*ySpacing)
 drawLines :: Color -> (Float, Float) -> [String] -> Picture
 drawLines c (x,y) ls = Translate x y $  Color c $
                Pictures $ map drawLine $ zip ls [1..]
-  where drawLine (l,y) = textAt 10 (y*(-20)) l
+  where drawLine (l,row) = textAt 10 (row*(-20)) l
 
 textAt x y content = Translate x y (Scale 0.1 0.1 (Text content))
 
