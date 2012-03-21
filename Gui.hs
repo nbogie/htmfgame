@@ -12,8 +12,8 @@ import Game hiding (main)
 type World = Int
 main = guimain
 guimain = do
-  b <- initRandomBoard 8 8
-  bs <- mapM (const $ initRandomBoard 8 8) [1..4]
+  b <- initRandomBoard 6 6
+  bs <- mapM (const $ initRandomBoard 6 6) [1..4]
   gameInWindow 
           "Hey That's My Fish - Haskell UI" --name of the window
           (800,700) -- initial size of the window
@@ -39,24 +39,22 @@ handleChar 'n' (b,(nextb:others)) = (nextb,others)
 handleChar _ b = b
  
 drawState :: (Board,[Board])-> Picture
-drawState (b,_) = Pictures $ [
-  drawBoard b 
-  ]
+drawState (b,_) = Pictures $ 
+   (Translate (-100) (-100) (drawPlayingArea b)) : 
+   [ drawLines white (-400,300) ((lines . displayBoard) b) ]
 
-drawBoard b = 
-  Pictures $ [drawIceState is | is <- M.assocs (posStateMap b)]
-          ++ [ drawLines white (-400,300) ((lines . displayBoard) b)
-             , drawLines white (-400,-100) ["hello", "world"] ]
-  where 
-    (w,h) = dimensions b
+drawPlayingArea b = 
+  Pictures $ [ drawIceState is | is <- M.assocs (posStateMap b)]
 
 iceState :: PositionState -> IceState
 iceState (PositionState istate _) = istate
 
 drawIceState :: (Position,PositionState) -> Picture
-drawIceState (p,(PositionState ist playerM)) = Translate x y $ Pictures $ [iceOrSea, fish ist, picOrNone penguin playerM]
+drawIceState (p,(PositionState ist playerM)) = 
+  Translate x y $ Pictures $ 
+    [iceOrSea, fish ist, picOrNone penguin playerM]
   where 
-    iceOrSea = Color (colorForIceState ist) $rectangleSolid 30 30
+    iceOrSea = Color (colorForIceState ist) $ drawHex side
     picOrNone :: (a-> Picture) -> Maybe a -> Picture 
     picOrNone f (Just v) = f v
     picOrNone f Nothing = Pictures []
@@ -84,7 +82,7 @@ colorForIceState (Ice n) = white
 type UiPosition = (Float, Float)
 
 toUiPos :: Position -> UiPosition
-toUiPos (Position x y) = (fromIntegral x*40,fromIntegral y*40)
+toUiPos (Position x y) = (fromIntegral x*xSpacing,fromIntegral y*ySpacing)
 
 drawLines :: Color -> (Float, Float) -> [String] -> Picture
 drawLines c (x,y) ls = Translate x y $  Color c $
@@ -92,3 +90,22 @@ drawLines c (x,y) ls = Translate x y $  Color c $
   where drawLine (l,y) = textAt 10 (y*(-20)) l
 
 textAt x y content = Translate x y (Scale 0.1 0.1 (Text content))
+
+
+hexPath s = [(-hw,-hs), (-hw, hs), (0, hh), (hw, hs), (hw, -hs), (0, -hh)]
+  where
+    h = hexHeight
+    w = hexWidth
+    hw = w/2
+    hh = h/2
+    hs = s/2
+ 
+drawHex :: Float -> Picture
+drawHex s = Pictures $ [ Scale sc sc $ polygon (hexPath s) ]
+  where sc = 0.95 
+
+side = 40
+hexWidth = side * sqrt 3
+hexHeight = 2 * side
+xSpacing = hexWidth / 2
+ySpacing = (side+hexHeight) / 2

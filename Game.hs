@@ -121,7 +121,7 @@ initRandomBoard w h = do
     initPFM           = M.fromList (zip allPlayers (repeat False))
     initPSM w h iceNs = M.fromList (zip hexGrid (map mkpos iceNs))
       where
-        hexGrid = [Position x y | y <- [1..h], x<-[1..w], 
+        hexGrid = [Position x y | y <- [1..h], x<-[1..2*w], 
                                   (x+y) `mod` 2 == 0]
         mkpos v = PositionState (Ice v) Nothing
 
