@@ -316,6 +316,9 @@ nonguimain = do
       autoplay logging (stratFor $ read strat1) (stratFor $ read strat2) $ b
     otherArgs -> error "Usage: prog width height strat1 strat2 (Debug|Info|Silent)"
 
--- TODO: log game to file so curious situations can be replayed
+-- TODO: implement the AI so it's not moronic.
+-- TODO: log game to file so curious situations can be replayed.
 -- TODO: have the AI try to maximize the delta between player scores, 
 --       rather than the abs score of current player
+-- TODO: do away with player finished flags.  Correct and immediate removal of 
+-- stuck penguins from the board will allow us to ask simply "any available moves" for isGameOver impl.
