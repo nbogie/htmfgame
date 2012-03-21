@@ -26,7 +26,7 @@ data Board = Board { dimensions :: (Int,Int)
 
 data PositionState = PositionState IceState (Maybe Player) deriving (Show, Eq, Ord)
 data IceState = NoIce | Ice Int deriving (Show, Eq, Ord)
-data Direction = N | E | S | W deriving (Show, Eq, Ord, Enum, Bounded)
+data Direction = NE | E | SE | SW | W | NW deriving (Show, Eq, Ord, Enum, Bounded)
 
 data Player = Player1| Player2 deriving (Show, Eq, Ord, Enum, Bounded)
 
@@ -63,10 +63,12 @@ legalMovesFrom b startPos = zipWith Move (repeat startPos) (legalPositionsFrom b
 
 allDirections = [minBound .. maxBound]
 
-offsets N = (0, 1)
-offsets E = (1, 0)
-offsets S = (0, -1)
-offsets W = (-1, 0)
+offsets NE = (1, 1)
+offsets E = (2, 0)
+offsets SE = (1, -1)
+offsets SW = (-1, -1)
+offsets W = (-2, 0)
+offsets NW = (-1, 1)
 
 nextPosition :: Position -> Direction -> Position
 nextPosition (Position x y) d = let (dx, dy) = offsets d in (Position (x + dx) (y + dy))
@@ -107,6 +109,8 @@ addRandomPlayers b = do
   let playerPositions = zip (cycle allPlayers) (take 2 rndPosns)
   return $ updatePosStateMap (\m -> foldl addPlayerAtPos m playerPositions) b
 
+
+
 initRandomBoard :: Int -> Int -> IO Board
 initRandomBoard w h = do
   rndNs <- fmap (randomRs (1,3)) getStdGen
@@ -115,8 +119,10 @@ initRandomBoard w h = do
   where 
     initScoreMap      = M.fromList (zip allPlayers (repeat 0))
     initPFM           = M.fromList (zip allPlayers (repeat False))
-    initPSM w h iceNs = M.fromList $ zip [Position x y | x <- [1..w], y <- [1..h]] (map mkpos iceNs)
+    initPSM w h iceNs = M.fromList (zip hexGrid (map mkpos iceNs))
       where
+        hexGrid = [Position x y | y <- [1..h], x<-[1..w], 
+                                  (x+y) `mod` 2 == 0]
         mkpos v = PositionState (Ice v) Nothing
 
 addPlayerAtPos :: PosStateMap -> (Player, Position) -> PosStateMap
@@ -173,10 +179,6 @@ allLegalMovesForPlayer b player =
   concatMap (legalMovesFrom b) startPosns
   where startPosns = allPlayerPositions b player
 
-allPositions :: Board -> [Position]
-allPositions b = [Position x y | y <- [h, (h-1)..1], x <- [1..w]]
-  where h = height b; w = width b
-
 allPlayerPositions :: Board -> Player -> [Position]
 allPlayerPositions b player = 
   map fst $ filter (isPenguinInPosState player . snd) . M.assocs $ posStateMap b
@@ -189,13 +191,7 @@ displayBoard b@(Board dim player scoreMap pfm posStateMap) =
     "Next to play " ++ show player 
     ++ ", Finished players: " ++ finMapStr  
     ++ "\n\tScores: " ++ show (M.assocs scoreMap) 
-    ++ "\n"++ makeBoardGrid b
       where finMapStr = show $ map fst . filter snd . M.assocs $ pfm
-
-makeBoardGrid b = unlines $ map concat $ wrap (width b) $ map (displayPosState . posState b) (allPositions b)
-  where
-    wrap n xs | length xs <= n  = [xs]
-    wrap n xs | otherwise       = take n xs : wrap n (drop n xs)
 
 displayPosState :: PositionState -> String
 displayPosState (PositionState (Ice val) p) = show val ++ (playerSym p) ++ " "
