@@ -234,11 +234,11 @@ pickBestMove b =
 defaultDepth = 4
 
 bestMove :: Depth -> Board -> [Move] -> (Int, Move)
-bestMove depth b ms = maximumBy (comparing fst) $ mapAnnotate (aiScore depth . makeMove b) ms
+bestMove depth b ms = maximumBy (comparing fst) $ mapAnnotate (negamax depth . makeMove b) ms
 
 -- from point of view of the player who made the last move
-aiScore :: Int -> Board -> Int
-aiScore depth b
+negamax :: Int -> Board -> Int
+negamax depth b
   | isGameOver b = 
       case whoWon b of
       Just winner | winner == currentPlayer b -> 1000 * scoreForCurrentPlayer b
@@ -246,7 +246,7 @@ aiScore depth b
       Nothing                                 -> 0
   | depth == 0 = staticEval b (currentPlayer b)
   | otherwise = case allLegalMovesForPlayer b (nextPlayer b) of
-            [] -> negate $ aiScore (depth-1) (giveUpMove b)
+            [] -> negate $ negamax (depth-1) (giveUpMove b)
             ms -> negate $ fst $ bestMove (depth-1) b ms
 
 type Depth = Int
