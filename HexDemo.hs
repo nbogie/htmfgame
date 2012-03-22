@@ -1,11 +1,10 @@
-{-# LANGUAGE PatternGuards #-}
 module Gui where
 import Graphics.Gloss.Interface.Game
 import Graphics.Gloss.Data.Extent
 import System.Environment
 type MousePtr = (Float, Float)
 type World = (MousePtr, Int)
-main = do
+main = 
   gameInWindow 
           "hexen" --name of the window
           (800,700) -- initial size of the window
@@ -36,7 +35,7 @@ hexPath s = [(-hw,-hs), (-hw, hs), (0, hh), (hw, hs), (hw, -hs), (0, -hh)]
     hs = s/2
  
 drawHex :: Float -> Picture
-drawHex s = Pictures $ [ Scale sc sc $ Color white $ polygon (hexPath s) ]
+drawHex s = Pictures [ Scale sc sc $ Color white $ polygon (hexPath s) ]
   where sc = 0.95 
 
 side = 40

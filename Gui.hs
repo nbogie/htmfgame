@@ -1,4 +1,3 @@
-{-# LANGUAGE PatternGuards #-}
 module Gui where
 import Graphics.Gloss.Interface.Game
 import qualified Data.Map as M
@@ -30,31 +29,31 @@ type GS = (Board,[Board])
 handleChar :: Char -> GS -> GS
 handleChar 'r' (b,bs)             = (makeRandomMoveIfUnfinished b, bs)
 handleChar 'b' (b,bs)             = (makeBestMoveIfUnfinished b, bs)
-handleChar 'n' (_b,(nextb:others)) = (nextb,others)
+handleChar 'n' (_b, nextb:others) = (nextb,others)
 handleChar _ b = b
  
 drawState :: (Board,[Board])-> Picture
 drawState (b,_) = Pictures $ 
-   (Translate (-100) (-100) (drawPlayingArea b)) : 
+   Translate (-100) (-100) (drawPlayingArea b) : 
    [ drawLines white (-400,300) ((lines . displayBoard) b) ]
 
 drawPlayingArea b = 
-  Pictures $ [ drawIceState is | is <- M.assocs (posStateMap b)]
+  Pictures [ drawIceState is | is <- M.assocs (posStateMap b)]
 
 iceState :: PositionState -> IceState
 iceState (PositionState istate _) = istate
 
 drawIceState :: (Position,PositionState) -> Picture
-drawIceState (p,(PositionState ist playerM)) = 
-  Translate x y $ Pictures $ 
-    [iceOrSea, fish ist, picOrNone penguin playerM]
+drawIceState (p, PositionState iceSt playerM) = 
+  Translate x y $ Pictures 
+    [iceOrSea, fish iceSt, picOrNone penguin playerM]
   where 
-    iceOrSea = Color (colorForIceState ist) $ drawHex side
+    iceOrSea = Color (colorForIceState iceSt) $ drawHex side
     picOrNone :: (a-> Picture) -> Maybe a -> Picture 
     picOrNone f (Just v) = f v
     picOrNone _ Nothing = Pictures []
     penguin :: Player -> Picture
-    penguin player = Pictures $ [
+    penguin player = Pictures [
       Color black $ rectangleSolid 15 25
       , Color (colorForPlayer player) $ rectangleSolid 7 18  ]
     (x,y) = toUiPos p
@@ -95,7 +94,7 @@ hexPath s = [(-hw,-hs), (-hw, hs), (0, hh), (hw, hs), (hw, -hs), (0, -hh)]
     hs = s/2
  
 drawHex :: Float -> Picture
-drawHex s = Pictures $ [ Scale sc sc $ polygon (hexPath s) ]
+drawHex s = Pictures [ Scale sc sc $ polygon (hexPath s) ]
   where sc = 0.95 
 
 side = 40

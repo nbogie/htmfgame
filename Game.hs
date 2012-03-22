@@ -1,10 +1,12 @@
 module Game where
 
-import Data.List (maximumBy, intercalate)
+import Control.Monad (when)
+import Data.List (maximumBy)
 import Data.Ord (comparing)
+import Data.Maybe (fromMaybe)
 import System( getArgs )
-import qualified Data.Map as M
 import System.Random
+import qualified Data.Map as M
 import Shuffle
 
 data Position = Position Int Int deriving (Eq, Ord)
@@ -77,9 +79,10 @@ availablePositions :: Board -> [Position]
 availablePositions b = [p | p <- M.keys (posStateMap b), isAvailable b p]
 
 posState :: Board -> Position -> PositionState
-posState b p = case M.lookup p (posStateMap b) of
-  Just s -> s
-  Nothing -> error $ "No position state in map at " ++ show p ++ " on board " ++ show b
+posState b p = 
+  fromMaybe 
+    (error $ "No position state in map at " ++ show p ++ " on board " ++ show b)
+    (M.lookup p (posStateMap b))
 
 isAvailable :: Board -> Position  -> Bool
 isAvailable b p = isInBounds b p && isIcePresent b p && not (isPenguinPresent b p)
@@ -94,7 +97,7 @@ isPenguinPresent b p =
     (PositionState _ (Just _)) -> True
     _ -> False
   
-isInBounds b (Position x y) = x >= 1 && x <= (width b) && y >= 1 && y <= (height b)
+isInBounds b (Position x y) = x >= 1 && x <= width b && y >= 1 && y <= height b
 
 legalMovesInDirection :: Board -> Position -> Direction -> [Position]
 legalMovesInDirection b origPos d = 
@@ -130,9 +133,9 @@ addPlayerAtPos psm (player, position) =
   M.adjust (\(PositionState i _p)-> PositionState i (Just player)) position psm
 
 makeBestMoveIfUnfinished :: Board -> Board
-makeBestMoveIfUnfinished b = makeMoveIfUnfinished pickBestMove b
+makeBestMoveIfUnfinished = makeMoveIfUnfinished pickBestMove
 makeRandomMoveIfUnfinished :: Board -> Board
-makeRandomMoveIfUnfinished b = makeMoveIfUnfinished pickRandomMove b
+makeRandomMoveIfUnfinished = makeMoveIfUnfinished pickRandomMove
 
 makeMoveIfUnfinished strat b = case strat b of
   Nothing -> giveUpMove b
@@ -142,10 +145,10 @@ makeMoveIfUnfinished strat b = case strat b of
 makeMove :: Board -> Move -> Board
 makeMove b (Move p1 p2) = 
   case diag (posState b) (p1,p2) of
-    ((PositionState (Ice fishOnIce) (Just player)), 
-     (PositionState (Ice fishOnIceP2) Nothing)) ->  
-          (removeAnyLostPenguins p2 player fishOnIceP2) . 
-          (updateToNextPlayer . incrementFishCount player fishOnIce ) . 
+    (PositionState (Ice fishOnIce) (Just player), 
+     PositionState (Ice fishOnIceP2) Nothing) ->  
+          removeAnyLostPenguins p2 player fishOnIceP2 . 
+          updateToNextPlayer . incrementFishCount player fishOnIce . 
           updatePosStateMap (M.adjust moveOffState p1 . M.adjust (addPenguinToState player) p2) $ b
     (ps1Bad, ps2Bad) -> error $ show ("Bad position states ", ps1Bad, ", ", ps2Bad, " at ", p1, " and ", p2)
 
@@ -157,7 +160,7 @@ removeAnyLostPenguins :: Position -> Player -> Int -> Board -> Board
 removeAnyLostPenguins p player fishOnIce b | null (legalMovesFrom b p) = 
   incrementFishCount player fishOnIce .  
   updatePosStateMap (M.adjust moveOffState p . M.adjust (addPenguinToState player) p) $ b
-removeAnyLostPenguins _ _ _ b |otherwise = b --do nothing
+removeAnyLostPenguins _ _ _ b = b --do nothing
 
 otherPlayer Player1 = Player2
 otherPlayer Player2 = Player1
@@ -192,13 +195,13 @@ isPenguinInPosState _ _ = False
 
 displayBoard :: Board -> String
 displayBoard b = 
-    "Next to play " ++ show (nextPlayer b) 
-    ++ ", Finished players: " ++ finMapStr  
-    ++ "\n\tScores: " ++ show (M.assocs (scoreMap b))
-      where finMapStr = show $ map fst . filter snd . M.assocs $ (playerFinishedMap b)
+  "Next to play " ++ show (nextPlayer b) 
+  ++ ", Finished players: " ++ finMapStr  
+  ++ "\n\tScores: " ++ show (M.assocs (scoreMap b))
+    where finMapStr = show $ map fst . filter snd . M.assocs $ playerFinishedMap b
 
 displayPosState :: PositionState -> String
-displayPosState (PositionState (Ice val) p) = show val ++ (playerSym p) ++ " "
+displayPosState (PositionState (Ice val) p) = show val ++ playerSym p ++ " "
   where playerSym Nothing = " "
         playerSym (Just Player1) = "P"
         playerSym (Just Player2) = "Q"
@@ -208,7 +211,7 @@ giveUpMove :: Board -> Board
 giveUpMove b = let p = currentPlayer b in markPlayerFinished p b
 
 markPlayerFinished :: Player -> Board -> Board
-markPlayerFinished player = (updateToNextPlayer . updatePlayerFinishedMap (M.adjust (const True) player))
+markPlayerFinished player = updateToNextPlayer . updatePlayerFinishedMap (M.adjust (const True) player)
 
 allPlayersFinished ::Board -> Bool
 allPlayersFinished b = all id $ map snd . M.assocs $ playerFinishedMap b 
@@ -231,21 +234,20 @@ pickBestMove b =
 defaultDepth = 4
 
 bestMove :: Depth -> Board -> [Move] -> (Int, Move)
-bestMove depth b ms = maximumBy (comparing fst) $ mapAnnotate (aiScore depth . makeMove b) $ ms
+bestMove depth b ms = maximumBy (comparing fst) $ mapAnnotate (aiScore depth . makeMove b) ms
 
 -- from point of view of the player who made the last move
 aiScore :: Int -> Board -> Int
-aiScore depth b = case isGameOver b of
-  True -> case whoWon b of
-    Just winner | winner == currentPlayer b -> 1000 * scoreForCurrentPlayer b
-                | otherwise                 -> (-1000)
-    Nothing                                 -> 0
-  False -> 
-      if depth == 0 
-        then staticEval b (currentPlayer b)
-        else case allLegalMovesForPlayer b (nextPlayer b) of
-    [] -> negate $ aiScore (depth-1) (giveUpMove b)
-    ms -> negate $ fst $ bestMove (depth-1) b ms
+aiScore depth b
+  | isGameOver b = 
+      case whoWon b of
+      Just winner | winner == currentPlayer b -> 1000 * scoreForCurrentPlayer b
+                  | otherwise                 -> -1000
+      Nothing                                 -> 0
+  | depth == 0 = staticEval b (currentPlayer b)
+  | otherwise = case allLegalMovesForPlayer b (nextPlayer b) of
+            [] -> negate $ aiScore (depth-1) (giveUpMove b)
+            ms -> negate $ fst $ bestMove (depth-1) b ms
 
 type Depth = Int
 
@@ -253,12 +255,12 @@ mapAnnotate :: (a -> b) -> [a] -> [(b, a)]
 mapAnnotate f = map (\x -> (f x, x))
 
 whoWon ::  Board -> Maybe Player
-whoWon b = if s1==s2 
-            then Nothing 
-            else if s1 > s2 then Just Player1 else Just Player2
-  where 
-    s1 = scoreFor b Player1
-    s2 = scoreFor b Player2
+whoWon b 
+  | s1 == s2  = Nothing
+  | s1  > s2  = Just Player1
+  | otherwise = Just Player2
+  where s1 = scoreFor b Player1
+        s2 = scoreFor b Player2
 
 
 scoreForCurrentPlayer :: Board -> Int
@@ -278,7 +280,7 @@ difference f (a,b) = f a - f b
 --       tiles connected more than once
 
 scoreFor :: Board -> Player -> Int
-scoreFor b p = (scoreMap b) M.! p
+scoreFor b p = scoreMap b M.! p
 
 scoresForPlayers :: Board -> [Int]
 scoresForPlayers b = map (scoreFor b) allPlayers
@@ -286,22 +288,21 @@ showResultPlain :: Board -> String
 showResultPlain b = winner ++ " " ++ scores
   where
     winner = maybe "Draw" show (whoWon b)
-    scores = intercalate " " $ map show $ scoresForPlayers b
+    scores = unwords $ map show $ scoresForPlayers b
 
 autoplay :: Logging -> Strategy -> Strategy -> Board -> IO Board
-autoplay logging strat otherStrat b = do
+autoplay logging strat otherStrat b = 
   if allPlayersFinished b
-    then do
-      info $ "All players finished - game over.\n" ++ displayBoard b
-      >> logIt Silent (showResultPlain b)
-      >> return b
+    then info ("All players finished - game over.\n" ++ displayBoard b)
+         >> logIt Silent (showResultPlain b)
+         >> return b
     else do
         debug $ displayBoard b
         case strat b of
-          Nothing -> (debug $ "Cannot play: "++ (show . nextPlayer) b ) 
-                      >> (autoplay logging otherStrat strat $ giveUpMove b)
-          Just mv -> (debug $ show (nextPlayer b) ++ " making move: " ++ show mv) 
-                      >> autoplay logging otherStrat strat (makeMove b mv)
+          Nothing -> debug ("Cannot play: "++ (show . nextPlayer) b ) 
+                      >> autoplay logging otherStrat strat (giveUpMove b)
+          Just mv -> debug (show (nextPlayer b) ++ " making move: " ++ show mv)
+                     >> autoplay logging otherStrat strat (makeMove b mv)
   where 
     debug = logIt Debug; info = logIt Info
     logIt level = if logging <= level then putStrLn else const $ return ()
@@ -313,10 +314,9 @@ nonguimain = do
     [w,h,strat1,strat2,logLevel] -> do
       let logging = (read logLevel)
       b <- initRandomBoard (read w) (read h)
-      if logging <= Info
-        then putStrLn $ "Starting with strategies: " ++ strat1 ++ ", " ++ strat2
-        else return ()
-      autoplay logging (stratFor $ read strat1) (stratFor $ read strat2) $ b
+      when (logging <= Info) $ 
+        putStrLn $ "Starting with strategies: " ++ strat1 ++ ", " ++ strat2
+      autoplay logging (stratFor $ read strat1) (stratFor $ read strat2) b
     _args -> error "Usage: prog width height strat1 strat2 (Debug|Info|Silent)"
 
 -- TODO: implement the AI so it's not moronic.
