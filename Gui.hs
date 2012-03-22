@@ -18,7 +18,7 @@ guimain = do
           handleInput -- A function to handle input events
           (const id)
 
-backgroundColor = dark $ dark $ dark blue -- makeColor8 200 200 200 100
+backgroundColor = colorSea -- dark $ dark $ dark blue -- makeColor8 200 200 200 100
 
 type GS = (Board,[Board],[Board]) -- (board in play, undo list, fresh boards)
 
@@ -40,7 +40,7 @@ handleChar _ b = b
 drawState :: (Board,[Board],[Board])-> Picture
 drawState (b,_,_) = Pictures $ 
    Translate (-100) (-100) (drawPlayingArea b) : 
-   [ drawLines white (-400,300) ((lines . displayBoard) b ++ help) ]
+   [ drawLines colorForText (-400,300) ((lines . displayBoard) b ++ [""] ++ help) ]
 
 help :: [String]
 help = [ "---- Keys -------------"
@@ -58,32 +58,51 @@ iceState (PositionState istate _) = istate
 drawIceState :: (Position,PositionState) -> Picture
 drawIceState (p, PositionState iceSt playerM) = 
   Translate x y $ Pictures 
-    [iceOrSea, fish iceSt, picOrNone penguin playerM]
+    [iceOrSea, fishCountPic iceSt, picOrNone penguin playerM]
   where 
-    iceOrSea = Color (colorForIceState iceSt) $ drawHex side
-    picOrNone :: (a-> Picture) -> Maybe a -> Picture 
-    picOrNone f (Just v) = f v
-    picOrNone _ Nothing = Pictures []
-    penguin :: Player -> Picture
-    penguin player = Pictures [
-      Color black $ rectangleSolid 15 25
-      , Color (colorForPlayer player) $ rectangleSolid 7 18  ]
     (x,y) = toUiPos p
+    iceOrSea = Color (colorForIceState iceSt) $ drawHex side
+    penguin player = Pictures [
+        Color black $ rectangleSolid 14 25
+      , Color (colorForPlayer player) $ rectangleSolid 8 20  ]
 
-fish (Ice fc) = case fc of
-  1 -> Color green $ rectangleSolid 25 20
-  2 -> Color orange $ rectangleSolid 20 10
-  3 -> Color magenta $ rectangleSolid 15 20
-  other -> Color red $ textAt 0 0 (show other)
-fish _ = Pictures []
+picOrNone :: (a-> Picture) -> Maybe a -> Picture 
+picOrNone f (Just v) = f v
+picOrNone _ Nothing = Pictures []
 
-colorForPlayer Player1 = yellow
-colorForPlayer Player2 = red
+fishCountPic (Ice fc) = Pictures $ fishPics fc ++
+   [] -- [Color black $ textAt 10 (-20) (show fc)]
+fishCountPic NoIce = Pictures []
+
+fishPics fc = map (\v -> Rotate (fromIntegral (v * (360 `div` fc))) $ 
+              Translate 0 20 $ fishPic fc) [1..fc]
+
+fishPic fc = Color (colorForFish fc) $ Pictures [
+               rectangleSolid 25 10, 
+               Translate (-7) 2 $ Color (dark $ colorForFish fc) $ circleSolid 2 ]
+
+colorForText = white
+
+colorForPlayer Player1 = colorGoldfish -- dark yellow
+colorForPlayer Player2 = black -- dark yellow
+
+colorSea      = makeColor8 46 90 107 255
 
 colorForIceState :: IceState -> Color
-colorForIceState NoIce = blue
-colorForIceState (Ice _) = white
+colorForIceState NoIce   = makeColor8 72 163 159 255
+colorForIceState (Ice _) = white 
+colorSeaGlass = makeColor8 163 204 188 255
 
+colorGoldfish = makeColor8 255 147 84 255
+colorAnnajak  = makeColor8 252 223 184 255
+
+colorForFish fc = 
+  case fc of
+    1 -> c
+    2 -> c
+    3 -> c
+    _ -> black
+  where c = colorSeaGlass
 type UiPosition = (Float, Float)
 
 toUiPos :: Position -> UiPosition
@@ -94,7 +113,7 @@ drawLines c (x,y) ls = Translate x y $  Color c $
                Pictures $ map drawLine $ zip ls [1..]
   where drawLine (l,row) = textAt 10 (row*(-20)) l
 
-textAt x y content = Translate x y (Scale 0.1 0.1 (Text content))
+textAt x y content = Translate x y (Scale 0.12 0.12 (Text content))
 
 
 hexPath s = [(-hw,-hs), (-hw, hs), (0, hh), (hw, hs), (hw, -hs), (0, -hh)]
@@ -107,10 +126,13 @@ hexPath s = [(-hw,-hs), (-hw, hs), (0, hh), (hw, hs), (hw, -hs), (0, -hh)]
  
 drawHex :: Float -> Picture
 drawHex s = Pictures [ Scale sc sc $ polygon (hexPath s) ]
-  where sc = 0.95 
+  where sc = 0.90 
 
 side = 40
 hexWidth = side * sqrt 3
 hexHeight = 2 * side
 xSpacing = hexWidth / 2
 ySpacing = (side+hexHeight) / 2
+
+-- color scheme
+-- http://www.colourlovers.com/palette/437321/Sweet_penguin

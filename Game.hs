@@ -33,7 +33,7 @@ data Direction = NE | E | SE | SW | W | NW deriving (Show, Eq, Ord, Enum, Bounde
 data Player = Player1| Player2 deriving (Show, Eq, Ord, Enum, Bounded)
 
 playedLast = otherPlayer . nextPlayer
-allPlayers = [minBound .. maxBound]
+players = [minBound .. maxBound]
 
 data Move = Move Position Position deriving (Eq)
 instance Show Move where
@@ -58,25 +58,19 @@ updatePosStateMap :: (PosStateMap -> PosStateMap) -> Board -> Board
 updatePosStateMap f b = b { posStateMap = f $ posStateMap b }
 setPosStateMap b m = b { posStateMap = m }
 
+isPositionInBoard b p = M.member p $ posStateMap b
+
 legalPositionsFrom :: Board -> Position -> [Position]
-legalPositionsFrom b p = concatMap (legalMovesInDirection b p) allDirections
+legalPositionsFrom b p = concatMap (legalMovesInDirection b p) directions
+
 legalMovesFrom :: Board -> Position -> [Move]
 legalMovesFrom b startPos = zipWith Move (repeat startPos) (legalPositionsFrom b startPos)
-
-allDirections = [minBound .. maxBound]
-
-offsets NE = (1, 1)
-offsets E = (2, 0)
-offsets SE = (1, -1)
-offsets SW = (-1, -1)
-offsets W = (-2, 0)
-offsets NW = (-1, 1)
 
 nextPosition :: Position -> Direction -> Position
 nextPosition (Position x y) d = let (dx, dy) = offsets d in (Position (x + dx) (y + dy))
 
-availablePositions :: Board -> [Position]
-availablePositions b = [p | p <- M.keys (posStateMap b), isAvailable b p]
+vacantPositions :: Board -> [Position]
+vacantPositions b = [p | p <- M.keys (posStateMap b), isVacant b p]
 
 posState :: Board -> Position -> PositionState
 posState b p = 
@@ -84,8 +78,8 @@ posState b p =
     (error $ "No position state in map at " ++ show p ++ " on board " ++ show b)
     (M.lookup p (posStateMap b))
 
-isAvailable :: Board -> Position  -> Bool
-isAvailable b p = isInBounds b p && isIcePresent b p && not (isPenguinPresent b p)
+isVacant :: Board -> Position  -> Bool
+isVacant b p = isPositionInBoard b p && isIcePresent b p && not (isPenguinPresent b p)
 
 isIcePresent b p = 
   case posState b p of
@@ -97,20 +91,27 @@ isPenguinPresent b p =
     (PositionState _ (Just _)) -> True
     _ -> False
   
-isInBounds b (Position x y) = x >= 1 && x <= width b && y >= 1 && y <= height b
+directions = [minBound .. maxBound]
+
+offsets NE = (1, 1)
+offsets E = (2, 0)
+offsets SE = (1, -1)
+offsets SW = (-1, -1)
+offsets W = (-2, 0)
+offsets NW = (-1, 1)
 
 legalMovesInDirection :: Board -> Position -> Direction -> [Position]
 legalMovesInDirection b origPos d = 
-  if isAvailable b nextPos 
+  if isVacant b nextPos 
     then nextPos : legalMovesInDirection b nextPos d
     else []
   where nextPos = nextPosition origPos d
 
 addRandomPlayers :: Board -> IO Board
 addRandomPlayers b = do
-  rndPosns <- shuffleIO (availablePositions b)
-  let playerPositions = zip (cycle allPlayers) (take 2 rndPosns)
-  return $ updatePosStateMap (\m -> foldl addPlayerAtPos m playerPositions) b
+  rndPosns <- shuffleIO (vacantPositions b)
+  let pps = zip (cycle players) (take 4 rndPosns)
+  return $ updatePosStateMap (\m -> foldl addPlayerAtPos m pps) b
 
 initRandomBoard :: Int -> Int -> IO Board
 initRandomBoard w h = do
@@ -118,11 +119,11 @@ initRandomBoard w h = do
   let b = Board (w, h) Player1 initScoreMap initPFM (initPSM rndNs)
   addRandomPlayers b
   where 
-    initScoreMap   = M.fromList (zip allPlayers (repeat 0))
-    initPFM        = M.fromList (zip allPlayers (repeat False))
+    initScoreMap   = M.fromList (zip players (repeat 0))
+    initPFM        = M.fromList (zip players (repeat False))
     initPSM iceNs  = M.fromList (zip hexGrid (map mkpos iceNs))
       where
-        hexGrid = [Position x y | y <- [1..h], x<-[1..2*w], 
+        hexGrid = [Position x y | y <- [1..h], x<- [1..2*w], 
                                   (x+y) `mod` 2 == 0]
         mkpos v = PositionState (Ice v) Nothing
 
@@ -132,6 +133,7 @@ addPlayerAtPos psm (player, position) =
 
 makeBestMoveIfUnfinished :: Board -> Board
 makeBestMoveIfUnfinished = makeMoveIfUnfinished pickBestMove
+
 makeRandomMoveIfUnfinished :: Board -> Board
 makeRandomMoveIfUnfinished = makeMoveIfUnfinished pickRandomMove
 
@@ -148,7 +150,8 @@ makeMove b (Move p1 p2) =
           removeAnyLostPenguins p2 player fishOnIceP2 . 
           updateToNextPlayer . incrementFishCount player fishOnIce . 
           updatePosStateMap (M.adjust moveOffState p1 . M.adjust (addPenguinToState player) p2) $ b
-    (ps1Bad, ps2Bad) -> error $ show ("Bad position states ", ps1Bad, ", ", ps2Bad, " at ", p1, " and ", p2)
+    (ps1Bad, ps2Bad) -> 
+      error $ show ("Bad pos states ", ps1Bad, ", ", ps2Bad, " at ", p1, " and ", p2)
 
 diag f (x,y) = (f x, f y)
 difference f (a,b) = f a - f b
@@ -176,27 +179,26 @@ moveOffState (PositionState _ _) = PositionState NoIce Nothing
 addPenguinToState :: Player -> PositionState -> PositionState
 addPenguinToState player (PositionState iceState _) = PositionState iceState (Just player)
 
-stratFor :: StrategyName -> Strategy
-stratFor Best = pickBestMove
-stratFor Rnd = pickRandomMove
-
-allLegalMovesForPlayer :: Board -> Player -> [Move]
-allLegalMovesForPlayer b player = 
+legalMovesForPlayer :: Board -> Player -> [Move]
+legalMovesForPlayer b player = 
   concatMap (legalMovesFrom b) startPosns
-  where startPosns = allPlayerPositions b player
+  where startPosns = playerPositions b player
 
-allPlayerPositions :: Board -> Player -> [Position]
-allPlayerPositions b player = 
-  map fst $ filter (isPenguinInPosState player . snd) . M.assocs $ posStateMap b
-
-isPenguinInPosState player (PositionState _ (Just actualPlayer)) = player == actualPlayer
-isPenguinInPosState _ _ = False
+playerPositions :: Board -> Player -> [Position]
+playerPositions b player = 
+  map fst $ filter (isInPosition . snd) . M.assocs $ posStateMap b
+  where 
+    isInPosition (PositionState _ (Just actualPlayer)) = player == actualPlayer
+    isInPosition _ = False
 
 displayBoard :: Board -> String
 displayBoard b = 
-  "Next to play " ++ show (nextPlayer b) 
-  ++ ", Finished players: " ++ finMapStr  
-  ++ "\n\tScores: " ++ show (M.assocs (scoreMap b))
+  unlines [
+    if isGameOver b 
+      then "Game Over" 
+      else "Next to play " ++ show (nextPlayer b)
+  , "Finished players: " ++ finMapStr  
+  , "Scores: " ++ show (M.assocs (scoreMap b)) ]
     where finMapStr = show $ map fst . filter snd . M.assocs $ playerFinishedMap b
 
 displayPosState :: PositionState -> String
@@ -212,13 +214,13 @@ giveUpMove b = let p = playedLast b in markPlayerFinished p b
 markPlayerFinished :: Player -> Board -> Board
 markPlayerFinished player = updateToNextPlayer . updatePlayerFinishedMap (M.adjust (const True) player)
 
-allPlayersFinished ::Board -> Bool
-allPlayersFinished b = all id $ map snd . M.assocs $ playerFinishedMap b 
-
 isGameOver = allPlayersFinished
+  where
+    allPlayersFinished ::Board -> Bool
+    allPlayersFinished b = all id $ map snd . M.assocs $ playerFinishedMap b 
 
 pickRandomMove :: Board -> Maybe Move
-pickRandomMove b = case allLegalMovesForPlayer b (nextPlayer b) of
+pickRandomMove b = case legalMovesForPlayer b (nextPlayer b) of
   [] -> Nothing
   (m:_) -> Just m
 
@@ -226,7 +228,7 @@ pickBestMove :: Board -> Maybe Move
 pickBestMove b = 
   if isGameOver b 
   then Nothing
-  else case allLegalMovesForPlayer b (nextPlayer b) of
+  else case legalMovesForPlayer b (nextPlayer b) of
     [] -> Nothing
     ms -> Just $ snd $ bestMove defaultDepth b ms
 
@@ -241,11 +243,11 @@ negamax :: Int -> Board -> Int
 negamax depth b
   | isGameOver b = 
       case whoWon b of
-      Just winner | winner == playedLast b -> 1000 * fishScoreDeltaForLastPlayer b
+      Just winner | winner == playedLast b -> 1000 + fishScoreDeltaForLastPlayer b
                   | otherwise              -> -1000
       Nothing                              -> 0
   | depth == 0   = staticEval b (playedLast b)
-  | otherwise = case allLegalMovesForPlayer b (nextPlayer b) of
+  | otherwise = case legalMovesForPlayer b (nextPlayer b) of
                   [] -> negate $ negamax (depth-1) (giveUpMove b)
                   ms -> negate $ fst $ bestMove (depth-1) b ms
 
@@ -269,7 +271,7 @@ staticEval b p = avMovesScore + fishScoreDelta
   me = p
   you = otherPlayer p
   fishScoreDelta = difference (scoreFor b) (me, you)
-  avMovesScore   = difference (length . allLegalMovesForPlayer b) (me, you)
+  avMovesScore   = difference (length . legalMovesForPlayer b) (me, you)
 
 -- TODO: consider the following for static eval, (generally deltas of the property for me vs you)
 --       current fish score totals, 
@@ -282,7 +284,8 @@ scoreFor :: Board -> Player -> Int
 scoreFor b p = scoreMap b M.! p
 
 scoresForPlayers :: Board -> [Int]
-scoresForPlayers b = map (scoreFor b) allPlayers
+scoresForPlayers b = map (scoreFor b) players
+
 showResultPlain :: Board -> String
 showResultPlain b = winner ++ " " ++ scores
   where
@@ -291,8 +294,8 @@ showResultPlain b = winner ++ " " ++ scores
 
 autoplay :: Logging -> Strategy -> Strategy -> Board -> IO Board
 autoplay logging strat otherStrat b = 
-  if allPlayersFinished b
-    then info ("All players finished - game over.\n" ++ displayBoard b)
+  if isGameOver b
+    then info ("Game over.\n" ++ displayBoard b)
          >> logIt Silent (showResultPlain b)
          >> return b
     else do
@@ -317,6 +320,9 @@ nonguimain = do
         putStrLn $ "Starting with strategies: " ++ strat1 ++ ", " ++ strat2
       autoplay logging (stratFor $ read strat1) (stratFor $ read strat2) b
     _args -> error "Usage: prog width height strat1 strat2 (Debug|Info|Silent)"
+  where 
+    stratFor Best = pickBestMove
+    stratFor Rnd = pickRandomMove
 
 -- TODO: implement the AI so it's not moronic.
 -- TODO: log game to file so curious situations can be replayed.
