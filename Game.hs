@@ -32,7 +32,7 @@ data Direction = NE | E | SE | SW | W | NW deriving (Show, Eq, Ord, Enum, Bounde
 
 data Player = Player1| Player2 deriving (Show, Eq, Ord, Enum, Bounded)
 
-currentPlayer = otherPlayer . nextPlayer
+playedLast = otherPlayer . nextPlayer
 allPlayers = [minBound .. maxBound]
 
 data Move = Move Position Position deriving (Eq)
@@ -112,8 +112,6 @@ addRandomPlayers b = do
   let playerPositions = zip (cycle allPlayers) (take 2 rndPosns)
   return $ updatePosStateMap (\m -> foldl addPlayerAtPos m playerPositions) b
 
-
-
 initRandomBoard :: Int -> Int -> IO Board
 initRandomBoard w h = do
   rndNs <- fmap (randomRs (1,3)) getStdGen
@@ -153,6 +151,7 @@ makeMove b (Move p1 p2) =
     (ps1Bad, ps2Bad) -> error $ show ("Bad position states ", ps1Bad, ", ", ps2Bad, " at ", p1, " and ", p2)
 
 diag f (x,y) = (f x, f y)
+difference f (a,b) = f a - f b
 
 -- update score, AND remove penguin
 -- TODO: also consider other (or just other adjacent) penguins who we might have blocked in, too
@@ -208,7 +207,7 @@ displayPosState (PositionState (Ice val) p) = show val ++ playerSym p ++ " "
 displayPosState (PositionState NoIce _) = "~  "
 
 giveUpMove :: Board -> Board
-giveUpMove b = let p = currentPlayer b in markPlayerFinished p b
+giveUpMove b = let p = playedLast b in markPlayerFinished p b
 
 markPlayerFinished :: Player -> Board -> Board
 markPlayerFinished player = updateToNextPlayer . updatePlayerFinishedMap (M.adjust (const True) player)
@@ -231,6 +230,7 @@ pickBestMove b =
     [] -> Nothing
     ms -> Just $ snd $ bestMove defaultDepth b ms
 
+type Depth = Int
 defaultDepth = 4
 
 bestMove :: Depth -> Board -> [Move] -> (Int, Move)
@@ -241,15 +241,15 @@ negamax :: Int -> Board -> Int
 negamax depth b
   | isGameOver b = 
       case whoWon b of
-      Just winner | winner == currentPlayer b -> 1000 * scoreForCurrentPlayer b
-                  | otherwise                 -> -1000
-      Nothing                                 -> 0
-  | depth == 0 = staticEval b (currentPlayer b)
+      Just winner | winner == playedLast b -> 1000 * fishScoreDeltaForLastPlayer b
+                  | otherwise              -> -1000
+      Nothing                              -> 0
+  | depth == 0   = staticEval b (playedLast b)
   | otherwise = case allLegalMovesForPlayer b (nextPlayer b) of
-            [] -> negate $ negamax (depth-1) (giveUpMove b)
-            ms -> negate $ fst $ bestMove (depth-1) b ms
+                  [] -> negate $ negamax (depth-1) (giveUpMove b)
+                  ms -> negate $ fst $ bestMove (depth-1) b ms
 
-type Depth = Int
+fishScoreDeltaForLastPlayer b = difference (scoreFor b) (playedLast b, nextPlayer b)
 
 mapAnnotate :: (a -> b) -> [a] -> [(b, a)]
 mapAnnotate f = map (\x -> (f x, x))
@@ -263,9 +263,6 @@ whoWon b
         s2 = scoreFor b Player2
 
 
-scoreForCurrentPlayer :: Board -> Int
-scoreForCurrentPlayer b = scoreFor b $ currentPlayer b
-
 staticEval :: Board -> Player -> Int
 staticEval b p = avMovesScore + fishScoreDelta
  where
@@ -274,10 +271,12 @@ staticEval b p = avMovesScore + fishScoreDelta
   fishScoreDelta = difference (scoreFor b) (me, you)
   avMovesScore   = difference (length . allLegalMovesForPlayer b) (me, you)
 
-difference f (a,b) = f a - f b
--- TODO: consider current fish score totals, remaining connected fish score totals
---       total connected fish
+-- TODO: consider the following for static eval, (generally deltas of the property for me vs you)
+--       current fish score totals, 
+--       remaining connected fish score totals
 --       tiles connected more than once
+--       number of remaining penguins
+--       ...
 
 scoreFor :: Board -> Player -> Int
 scoreFor b p = scoreMap b M.! p

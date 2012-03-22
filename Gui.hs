@@ -3,7 +3,6 @@ import Graphics.Gloss.Interface.Game
 import qualified Data.Map as M
 import Game hiding (main)
 
-type World = Int
 main = guimain
 guimain = do
   b <- initRandomBoard 6 6
@@ -14,29 +13,42 @@ guimain = do
           (10, 10) -- initial position of the window
           backgroundColor   -- background colour
           30 -- number of simulation steps to take for each second of real time
-          (b,bs) -- the initial world
+          (b,[], bs) -- the initial world
           drawState -- A function to convert the world into a picture
           handleInput -- A function to handle input events
           (const id)
 
 backgroundColor = dark $ dark $ dark blue -- makeColor8 200 200 200 100
 
+type GS = (Board,[Board],[Board]) -- (board in play, undo list, fresh boards)
+
 handleInput :: Event -> GS -> GS
 handleInput (EventKey (Char c)               Down  _   _pos)  b = handleChar c b
 handleInput (EventKey (MouseButton LeftButton) Down  _ _pos)  b = b
 handleInput _ b = b
-type GS = (Board,[Board])
+
 handleChar :: Char -> GS -> GS
-handleChar 'r' (b,bs)             = (makeRandomMoveIfUnfinished b, bs)
-handleChar 'b' (b,bs)             = (makeBestMoveIfUnfinished b, bs)
-handleChar 'n' (_b, nextb:others) = (nextb,others)
+handleChar 'r' (b,undos,bs)             = (makeRandomMoveIfUnfinished b, b:undos, bs)
+handleChar 'b' (b,undos,bs)             = (makeBestMoveIfUnfinished b, b:undos, bs)
+handleChar 'n' (_, _, nextb:others) = (nextb, [], others)
+handleChar 'a' (b, [], bs) = (b, [], bs)
+handleChar 'a' (_, undos, bs) = (last undos, [], bs)
+handleChar 'u' (_, u:undos, bs) = (u, undos, bs)
+handleChar 'u' (b,[],bs)          = (b,[],bs)
 handleChar _ b = b
  
-drawState :: (Board,[Board])-> Picture
-drawState (b,_) = Pictures $ 
+drawState :: (Board,[Board],[Board])-> Picture
+drawState (b,_,_) = Pictures $ 
    Translate (-100) (-100) (drawPlayingArea b) : 
-   [ drawLines white (-400,300) ((lines . displayBoard) b) ]
+   [ drawLines white (-400,300) ((lines . displayBoard) b ++ help) ]
 
+help :: [String]
+help = [ "---- Keys -------------"
+       , "r - make Random move"
+       , "b - make Best move"
+       , "a - start same board Again"
+       , "u - Undo move"
+       , "n - New board (limited)" ]
 drawPlayingArea b = 
   Pictures [ drawIceState is | is <- M.assocs (posStateMap b)]
 
