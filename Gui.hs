@@ -5,22 +5,23 @@ import Game hiding (main)
 
 main = guimain
 guimain = do
-  b <- initRandomBoard 6 6
-  bs <- mapM (const $ initRandomBoard 6 6) ([1..4]::[Int])
+  b <- initRandomBoard 4 4 2
+  bs <- mapM (const $ (initRandomBoard 5 5 2)) ([1..4]::[Int])
   gameInWindow 
           "Hey That's My Fish - Haskell UI" --name of the window
           (800,700) -- initial size of the window
           (10, 10) -- initial position of the window
           backgroundColor   -- background colour
           30 -- number of simulation steps to take for each second of real time
-          (b,[], bs) -- the initial world
+          (b,[], bs, []) -- the initial world
           drawState -- A function to convert the world into a picture
           handleInput -- A function to handle input events
           (const id)
 
 backgroundColor = colorSea -- dark $ dark $ dark blue -- makeColor8 200 200 200 100
 
-type GS = (Board,[Board],[Board]) -- (board in play, undo list, fresh boards)
+-- (board in play, undo list, fresh boards, log msgs)
+type GS = (Board,[Board],[Board], [String])
 
 handleInput :: Event -> GS -> GS
 handleInput (EventKey (Char c)               Down  _   _pos)  b = handleChar c b
@@ -28,19 +29,25 @@ handleInput (EventKey (MouseButton LeftButton) Down  _ _pos)  b = b
 handleInput _ b = b
 
 handleChar :: Char -> GS -> GS
-handleChar 'r' (b,undos,bs)             = (makeRandomMoveIfUnfinished b, b:undos, bs)
-handleChar 'b' (b,undos,bs)             = (makeBestMoveIfUnfinished b, b:undos, bs)
-handleChar 'n' (_, _, nextb:others) = (nextb, [], others)
-handleChar 'a' (b, [], bs) = (b, [], bs)
-handleChar 'a' (_, undos, bs) = (last undos, [], bs)
-handleChar 'u' (_, u:undos, bs) = (u, undos, bs)
-handleChar 'u' (b,[],bs)          = (b,[],bs)
+handleChar 'r' (b,undos,bs, ls) = 
+  (b', b:undos, bs, ("random move score "++show i):ls)
+  where (i, b') = makeRandomMoveIfUnfinished b
+
+handleChar 'b' (b,undos,bs, ls) = 
+  (b', b:undos, bs, ("best move scored " ++ show i): ls)
+  where (i, b') = makeBestMoveIfUnfinished b
+
+handleChar 'n' (_, _, nextb:others,ms) = (nextb, [], others,ms)
+handleChar 'a' (b, [], bs,ms)          = (b, [], bs,ms)
+handleChar 'a' (_, undos, bs,ms)       = (last undos, [], bs,ms)
+handleChar 'u' (_, u:undos, bs,ms)     = (u, undos, bs,ms)
+handleChar 'u' (b,[],bs,ms)            = (b,[],bs,ms)
 handleChar _ b = b
  
-drawState :: (Board,[Board],[Board])-> Picture
-drawState (b,_,_) = Pictures $ 
+drawState :: (Board,[Board],[Board],[String])-> Picture
+drawState (b,_,_, msgs) = Pictures $ 
    Translate (-100) (-100) (drawPlayingArea b) : 
-   [ drawLines colorForText (-400,300) ((lines . displayBoard) b ++ [""] ++ help) ]
+   [ drawLines colorForText (-400,300) ((lines . displayBoard) b ++ [""] ++ help ++ [""] ++ (take 5 $ msgs)) ]
 
 help :: [String]
 help = [ "---- Keys -------------"
@@ -91,18 +98,12 @@ colorSea      = makeColor8 46 90 107 255
 colorForIceState :: IceState -> Color
 colorForIceState NoIce   = makeColor8 72 163 159 255
 colorForIceState (Ice _) = white 
-colorSeaGlass = makeColor8 163 204 188 255
 
+colorSeaGlass = makeColor8 163 204 188 255
 colorGoldfish = makeColor8 255 147 84 255
 colorAnnajak  = makeColor8 252 223 184 255
 
-colorForFish fc = 
-  case fc of
-    1 -> c
-    2 -> c
-    3 -> c
-    _ -> black
-  where c = colorSeaGlass
+colorForFish _fc = colorSeaGlass
 type UiPosition = (Float, Float)
 
 toUiPos :: Position -> UiPosition

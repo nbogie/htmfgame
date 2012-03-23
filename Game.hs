@@ -13,7 +13,7 @@ data Position = Position Int Int deriving (Eq, Ord)
 instance Show Position where
   show (Position x y) = "(" ++ show x ++ ","++show y++")"
 
-type Strategy = (Board -> Maybe Move)
+type Strategy = (Board -> Maybe (Int, Move))
 data StrategyName = Best | Rnd deriving (Show, Read, Eq)
 type PosStateMap =(M.Map Position PositionState) 
 type ScoreMap =(M.Map Player Int) 
@@ -107,17 +107,17 @@ legalMovesInDirection b origPos d =
     else []
   where nextPos = nextPosition origPos d
 
-addRandomPlayers :: Board -> IO Board
-addRandomPlayers b = do
+addRandomPlayers :: Int -> Board -> IO Board
+addRandomPlayers nPieces b = do
   rndPosns <- shuffleIO (vacantPositions b)
-  let pps = zip (cycle players) (take 4 rndPosns)
+  let pps = zip (cycle players) (take nPieces rndPosns)
   return $ updatePosStateMap (\m -> foldl addPlayerAtPos m pps) b
 
-initRandomBoard :: Int -> Int -> IO Board
-initRandomBoard w h = do
+initRandomBoard :: Int -> Int -> Int -> IO Board
+initRandomBoard w h nPieces = do
   rndNs <- fmap (randomRs (1,3)) getStdGen
   let b = Board (w, h) Player1 initScoreMap initPFM (initPSM rndNs)
-  addRandomPlayers b
+  addRandomPlayers nPieces b
   where 
     initScoreMap   = M.fromList (zip players (repeat 0))
     initPFM        = M.fromList (zip players (repeat False))
@@ -131,15 +131,15 @@ addPlayerAtPos :: PosStateMap -> (Player, Position) -> PosStateMap
 addPlayerAtPos psm (player, position) = 
   M.adjust (\(PositionState i _p)-> PositionState i (Just player)) position psm
 
-makeBestMoveIfUnfinished :: Board -> Board
+makeBestMoveIfUnfinished :: Board -> (Int, Board)
 makeBestMoveIfUnfinished = makeMoveIfUnfinished pickBestMove
 
-makeRandomMoveIfUnfinished :: Board -> Board
+makeRandomMoveIfUnfinished :: Board -> (Int, Board)
 makeRandomMoveIfUnfinished = makeMoveIfUnfinished pickRandomMove
 
 makeMoveIfUnfinished strat b = case strat b of
-  Nothing -> giveUpMove b
-  Just m -> makeMove b m
+  Nothing -> (0, giveUpMove b)
+  Just (i,m) -> (i, makeMove b m)
 
 -- TODO: return a type which includes the possibility of IllegalMove
 makeMove :: Board -> Move -> Board
@@ -201,15 +201,8 @@ displayBoard b =
   , "Scores: " ++ show (M.assocs (scoreMap b)) ]
     where finMapStr = show $ map fst . filter snd . M.assocs $ playerFinishedMap b
 
-displayPosState :: PositionState -> String
-displayPosState (PositionState (Ice val) p) = show val ++ playerSym p ++ " "
-  where playerSym Nothing = " "
-        playerSym (Just Player1) = "P"
-        playerSym (Just Player2) = "Q"
-displayPosState (PositionState NoIce _) = "~  "
-
 giveUpMove :: Board -> Board
-giveUpMove b = let p = playedLast b in markPlayerFinished p b
+giveUpMove b = let p = (otherPlayer $ playedLast b) in markPlayerFinished p b
 
 markPlayerFinished :: Player -> Board -> Board
 markPlayerFinished player = updateToNextPlayer . updatePlayerFinishedMap (M.adjust (const True) player)
@@ -219,21 +212,20 @@ isGameOver = allPlayersFinished
     allPlayersFinished ::Board -> Bool
     allPlayersFinished b = all id $ map snd . M.assocs $ playerFinishedMap b 
 
-pickRandomMove :: Board -> Maybe Move
+pickRandomMove :: Board -> Maybe (Int, Move)
 pickRandomMove b = case legalMovesForPlayer b (nextPlayer b) of
   [] -> Nothing
-  (m:_) -> Just m
+  (m:_) -> Just (0, m)
 
-pickBestMove :: Board -> Maybe Move
 pickBestMove b = 
   if isGameOver b 
   then Nothing
   else case legalMovesForPlayer b (nextPlayer b) of
     [] -> Nothing
-    ms -> Just $ snd $ bestMove defaultDepth b ms
+    ms -> Just $ bestMove defaultDepth b ms
 
 type Depth = Int
-defaultDepth = 4
+defaultDepth = 5
 
 bestMove :: Depth -> Board -> [Move] -> (Int, Move)
 bestMove depth b ms = maximumBy (comparing fst) $ mapAnnotate (negamax depth . makeMove b) ms
@@ -243,8 +235,8 @@ negamax :: Int -> Board -> Int
 negamax depth b
   | isGameOver b = 
       case whoWon b of
-      Just winner | winner == playedLast b -> 1000 + fishScoreDeltaForLastPlayer b
-                  | otherwise              -> -1000
+      Just winner | winner == playedLast b -> 30 + fishScoreDeltaForLastPlayer b
+                  | otherwise              -> -10
       Nothing                              -> 0
   | depth == 0   = staticEval b (playedLast b)
   | otherwise = case legalMovesForPlayer b (nextPlayer b) of
@@ -266,7 +258,7 @@ whoWon b
 
 
 staticEval :: Board -> Player -> Int
-staticEval b p = avMovesScore + fishScoreDelta
+staticEval b p = fishScoreDelta -- avMovesScore + fishScoreDelta
  where
   me = p
   you = otherPlayer p
@@ -303,7 +295,7 @@ autoplay logging strat otherStrat b =
         case strat b of
           Nothing -> debug ("Cannot play: "++ (show . nextPlayer) b ) 
                       >> autoplay logging otherStrat strat (giveUpMove b)
-          Just mv -> debug (show (nextPlayer b) ++ " making move: " ++ show mv)
+          Just (i,mv) -> debug (show (nextPlayer b) ++ " making move: " ++ show mv ++ " of score " ++ show i)
                      >> autoplay logging otherStrat strat (makeMove b mv)
   where 
     debug = logIt Debug; info = logIt Info
@@ -313,11 +305,11 @@ main = nonguimain
 nonguimain = do
   args <- getArgs
   case args of
-    [w,h,strat1,strat2,logLevel] -> do
+    [w,h,nPieces,strat1,strat2,logLevel] -> do
       let logging = (read logLevel)
-      b <- initRandomBoard (read w) (read h)
+      b <- initRandomBoard (read w) (read h) (read nPieces)
       when (logging <= Info) $ 
-        putStrLn $ "Starting with strategies: " ++ strat1 ++ ", " ++ strat2
+        putStrLn $ "Starting with strategies: " ++ strat1 ++ ", " ++ strat2 ++ " on a board of dimensions " ++ show (w,h) ++ " with " ++ show nPieces ++ " pieces"
       autoplay logging (stratFor $ read strat1) (stratFor $ read strat2) b
     _args -> error "Usage: prog width height strat1 strat2 (Debug|Info|Silent)"
   where 
@@ -330,3 +322,6 @@ nonguimain = do
 --       rather than the abs score of current player
 -- TODO: do away with player finished flags.  Correct and immediate removal of 
 -- stuck penguins from the board will allow us to ask simply "any available moves" for isGameOver impl.
+-- TODO: parallelize the search.  (will make ab pruning less effective)
+-- TODO: Add ab pruning to the minimax.
+-- TODO: let the user play.
