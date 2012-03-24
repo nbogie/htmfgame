@@ -124,7 +124,7 @@ posText (Position px py) _uip = Pictures [ miniText 0 (show (px,py)) ]
 drawIceState :: (Position,PositionState) -> Picture
 drawIceState (p, PositionState iceSt playerM) = 
   Translate x y $ Pictures 
-    [iceOrSea, fishCountPic iceSt, picOrNone penguin playerM, posText p (x,y)]
+    [iceOrSea, fishCountPic iceSt, picOrNone penguin playerM] -- , posText p (x,y)]
   where 
     (x,y) = toUiPos p
     iceOrSea = Color (colorForIceState iceSt) $ drawHex side
