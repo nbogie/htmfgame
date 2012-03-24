@@ -84,10 +84,11 @@ fishCountPic (Ice fc) = Pictures $ fishPics fc ++
 fishCountPic NoIce = Pictures []
 
 fishPics fc = map (\v -> Rotate (fromIntegral (v * (360 `div` fc))) $ 
-              Translate 0 20 $ fishPic fc) [1..fc]
+              Translate 0 19 $ fishPic fc) [1..fc]
 
 fishPic fc = Color (colorForFish fc) $ Pictures [
-               rectangleSolid 25 10, 
+               rectangleSolid 25 8, 
+               Translate 10 0 $ rectangleSolid 5 12, 
                Translate (-7) 2 $ Color (dark $ colorForFish fc) $ circleSolid 2 ]
 
 colorForText = white
