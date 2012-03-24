@@ -6,7 +6,7 @@ import Game hiding (main)
 main = guimain
 guimain = do
   b <- initRandomBoard 4 4 2
-  bs <- mapM (const $ (initRandomBoard 5 5 2)) ([1..4]::[Int])
+  bs <- mapM (const $ initRandomBoard 5 5 2) ([1..9]::[Int])
   gameInWindow 
           "Hey That's My Fish - Haskell UI" --name of the window
           (800,700) -- initial size of the window
@@ -43,11 +43,13 @@ handleChar 'a' (_, undos, bs,ms)       = (last undos, [], bs,ms)
 handleChar 'u' (_, u:undos, bs,ms)     = (u, undos, bs,ms)
 handleChar 'u' (b,[],bs,ms)            = (b,[],bs,ms)
 handleChar _ b = b
- 
+
 drawState :: (Board,[Board],[Board],[String])-> Picture
 drawState (b,_,_, msgs) = Pictures $ 
    Translate (-100) (-100) (drawPlayingArea b) : 
-   [ drawLines colorForText (-400,300) ((lines . displayBoard) b ++ [""] ++ help ++ [""] ++ (take 5 $ msgs)) ]
+   [ drawLines colorForText (-400,300) $  messages ]
+  where messages = concat $ ((lines . displayBoard) b) : help: [take 5 msgs]
+     
 
 help :: [String]
 help = [ "---- Keys -------------"

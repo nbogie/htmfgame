@@ -66,6 +66,9 @@ legalPositionsFrom b p = concatMap (legalMovesInDirection b p) directions
 legalMovesFrom :: Board -> Position -> [Move]
 legalMovesFrom b startPos = zipWith Move (repeat startPos) (legalPositionsFrom b startPos)
 
+cantMoveFrom :: Position -> Board -> Bool
+cantMoveFrom pos b = null $ legalMovesFrom b pos
+
 nextPosition :: Position -> Direction -> Position
 nextPosition (Position x y) d = let (dx, dy) = offsets d in (Position (x + dx) (y + dy))
 
@@ -145,24 +148,35 @@ makeMoveIfUnfinished strat b = case strat b of
 makeMove :: Board -> Move -> Board
 makeMove b (Move p1 p2) = 
   case diag (posState b) (p1,p2) of
-    (PositionState (Ice fishOnIce) (Just player), 
-     PositionState (Ice fishOnIceP2) Nothing) ->  
-          removeAnyLostPenguins p2 player fishOnIceP2 . 
-          updateToNextPlayer . incrementFishCount player fishOnIce . 
-          updatePosStateMap (M.adjust moveOffState p1 . M.adjust (addPenguinToState player) p2) $ b
+    (PositionState (Ice fc) (Just player), 
+     PositionState (Ice _) Nothing) ->  
+       removeAllLostPenguins .
+       updateToNextPlayer . 
+       incrementFishCount player fc . 
+       updatePosStateMap 
+        (M.adjust moveOffState p1 . M.adjust (addPenguinToState player) p2) $ b
     (ps1Bad, ps2Bad) -> 
-      error $ show ("Bad pos states ", ps1Bad, ", ", ps2Bad, " at ", p1, " and ", p2)
+       error $ show ("Bad pos states ", ps1Bad, ", ", ps2Bad, " at ", p1, " and ", p2)
 
 diag f (x,y) = (f x, f y)
 difference f (a,b) = f a - f b
 
--- update score, AND remove penguin
--- TODO: also consider other (or just other adjacent) penguins who we might have blocked in, too
-removeAnyLostPenguins :: Position -> Player -> Int -> Board -> Board
-removeAnyLostPenguins p player fishOnIce b | null (legalMovesFrom b p) = 
-  incrementFishCount player fishOnIce .  
-  updatePosStateMap (M.adjust moveOffState p . M.adjust (addPenguinToState player) p) $ b
-removeAnyLostPenguins _ _ _ b = b --do nothing
+fishCountAt :: Position -> Board -> Int
+fishCountAt p b = case posState b p of
+  (PositionState (Ice fc) _) -> fc
+  other -> error $ "unexpected state in fishCountAt.  posstate: "++show other
+-- for each player, for each penguin position.  if there are no moves possible
+-- for that penguin, remove that penguin, attributing score as necessary.
+
+stuckPenguins b = [(pl,pos,fc) | pl <- players, pos <- playerPositions b pl, 
+                                 let fc = fishCountAt pos b, cantMoveFrom pos b ]
+
+removeAllLostPenguins b = 
+  foldl (\b' (pl, pos, fc) -> removeAndScore pos pl fc b') b (stuckPenguins b)
+
+removeAndScore pos pl fc b = 
+  incrementFishCount pl fc .  
+  updatePosStateMap (M.adjust moveOffState pos) $ b
 
 otherPlayer Player1 = Player2
 otherPlayer Player2 = Player1
@@ -325,3 +339,4 @@ nonguimain = do
 -- TODO: parallelize the search.  (will make ab pruning less effective)
 -- TODO: Add ab pruning to the minimax.
 -- TODO: let the user play.
+-- TODO: If we are not connected to the enemy, adversarial search can stop.
