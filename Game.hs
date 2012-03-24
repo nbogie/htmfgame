@@ -17,12 +17,10 @@ type Strategy = (Board -> Maybe (Int, Move))
 data StrategyName = Best | Rnd deriving (Show, Read, Eq)
 type PosStateMap =(M.Map Position PositionState) 
 type ScoreMap =(M.Map Player Int) 
-type PlayerFinishedMap =(M.Map Player Bool) 
 
 data Board = Board { dimensions :: (Int,Int)
                    , nextPlayer :: Player
                    , scoreMap :: ScoreMap
-                   , playerFinishedMap :: PlayerFinishedMap
                    , posStateMap :: PosStateMap 
                    } deriving (Show, Eq, Ord)
 
@@ -51,9 +49,6 @@ updateNextPlayer f b = b { nextPlayer = f $ nextPlayer b }
 updateScoreMap :: (ScoreMap -> ScoreMap) -> Board -> Board
 updateScoreMap f b = b { scoreMap = f $ scoreMap b }
 
-updatePlayerFinishedMap :: (PlayerFinishedMap -> PlayerFinishedMap) -> Board -> Board
-updatePlayerFinishedMap f b = b { playerFinishedMap = f $ playerFinishedMap b }
-
 updatePosStateMap :: (PosStateMap -> PosStateMap) -> Board -> Board
 updatePosStateMap f b = b { posStateMap = f $ posStateMap b }
 setPosStateMap b m = b { posStateMap = m }
@@ -68,7 +63,8 @@ legalMovesFrom b startPos = zipWith Move (repeat startPos) (legalPositionsFrom b
 
 cantMoveFrom :: Position -> Board -> Bool
 cantMoveFrom pos b = null $ legalMovesFrom b pos
-
+cantMove :: Board -> Player -> Bool
+cantMove b pl = null $ legalMovesForPlayer b pl
 nextPosition :: Position -> Direction -> Position
 nextPosition (Position x y) d = let (dx, dy) = offsets d in (Position (x + dx) (y + dy))
 
@@ -119,11 +115,10 @@ addRandomPlayers nPieces b = do
 initRandomBoard :: Int -> Int -> Int -> IO Board
 initRandomBoard w h nPieces = do
   rndNs <- fmap (randomRs (1,3)) getStdGen
-  let b = Board (w, h) Player1 initScoreMap initPFM (initPSM rndNs)
+  let b = Board (w, h) Player1 initScoreMap (initPSM rndNs)
   addRandomPlayers nPieces b
   where 
     initScoreMap   = M.fromList (zip players (repeat 0))
-    initPFM        = M.fromList (zip players (repeat False))
     initPSM iceNs  = M.fromList (zip hexGrid (map mkpos iceNs))
       where
         hexGrid = [Position x y | y <- [1..h], x<- [1..2*w], 
@@ -141,7 +136,7 @@ makeRandomMoveIfUnfinished :: Board -> (Int, Board)
 makeRandomMoveIfUnfinished = makeMoveIfUnfinished pickRandomMove
 
 makeMoveIfUnfinished strat b = case strat b of
-  Nothing -> (0, giveUpMove b)
+  Nothing -> (0, togglePlayer b)
   Just (i,m) -> (i, makeMove b m)
 
 -- TODO: return a type which includes the possibility of IllegalMove
@@ -151,7 +146,7 @@ makeMove b (Move p1 p2) =
     (PositionState (Ice fc) (Just player), 
      PositionState (Ice _) Nothing) ->  
        removeAllLostPenguins .
-       updateToNextPlayer . 
+       togglePlayer . 
        incrementFishCount player fc . 
        updatePosStateMap 
         (M.adjust moveOffState p1 . M.adjust (addPenguinToState player) p2) $ b
@@ -181,8 +176,8 @@ removeAndScore pos pl fc b =
 otherPlayer Player1 = Player2
 otherPlayer Player2 = Player1
 
-updateToNextPlayer :: Board -> Board
-updateToNextPlayer = updateNextPlayer otherPlayer
+togglePlayer :: Board -> Board
+togglePlayer = updateNextPlayer otherPlayer
 
 incrementFishCount :: Player -> Int -> Board -> Board
 incrementFishCount player offset = updateScoreMap (M.adjust (+offset) player)
@@ -211,20 +206,9 @@ displayBoard b =
     if isGameOver b 
       then "Game Over" 
       else "Next to play " ++ show (nextPlayer b)
-  , "Finished players: " ++ finMapStr  
   , "Scores: " ++ show (M.assocs (scoreMap b)) ]
-    where finMapStr = show $ map fst . filter snd . M.assocs $ playerFinishedMap b
 
-giveUpMove :: Board -> Board
-giveUpMove b = let p = (otherPlayer $ playedLast b) in markPlayerFinished p b
-
-markPlayerFinished :: Player -> Board -> Board
-markPlayerFinished player = updateToNextPlayer . updatePlayerFinishedMap (M.adjust (const True) player)
-
-isGameOver = allPlayersFinished
-  where
-    allPlayersFinished ::Board -> Bool
-    allPlayersFinished b = all id $ map snd . M.assocs $ playerFinishedMap b 
+isGameOver b = all (cantMove b) players
 
 pickRandomMove :: Board -> Maybe (Int, Move)
 pickRandomMove b = case legalMovesForPlayer b (nextPlayer b) of
@@ -254,7 +238,7 @@ negamax depth b
       Nothing                              -> 0
   | depth == 0   = staticEval b (playedLast b)
   | otherwise = case legalMovesForPlayer b (nextPlayer b) of
-                  [] -> negate $ negamax (depth-1) (giveUpMove b)
+                  [] -> negate $ negamax (depth-1) (togglePlayer b)
                   ms -> negate $ fst $ bestMove (depth-1) b ms
 
 fishScoreDeltaForLastPlayer b = difference (scoreFor b) (playedLast b, nextPlayer b)
@@ -308,7 +292,7 @@ autoplay logging strat otherStrat b =
         debug $ displayBoard b
         case strat b of
           Nothing -> debug ("Cannot play: "++ (show . nextPlayer) b ) 
-                      >> autoplay logging otherStrat strat (giveUpMove b)
+                      >> autoplay logging otherStrat strat (togglePlayer b)
           Just (i,mv) -> debug (show (nextPlayer b) ++ " making move: " ++ show mv ++ " of score " ++ show i)
                      >> autoplay logging otherStrat strat (makeMove b mv)
   where 
