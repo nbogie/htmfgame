@@ -5,29 +5,44 @@ import Game hiding (main)
 
 main = guimain
 guimain = do
-  b <- initRandomBoard 4 4 4
-  bs <- mapM (const $ initRandomBoard 5 5 2) ([1..9]::[Int])
+  (start:bs) <- mapM (const $ initRandomBoard 6 6 4) ([1..9]::[Int])
   gameInWindow 
           "Hey That's My Fish - Haskell UI" --name of the window
-          (1000,900) -- initial size of the window
+          (700,600) -- initial size of the window
           (0, 0) -- initial position of the window
           backgroundColor   -- background colour
           30 -- number of simulation steps to take for each second of real time
-          (GS b [] bs [] handleSelect []) -- the initial world
+          (GS start [] bs [] handleSelect []) -- the initial world
           drawState -- A function to convert the world into a picture
           handleInput -- A function to handle input events
           (const id)
 
 handleSelect :: ClickHandler
-handleSelect (EventKey _ _ _ uiPos) gs = (logMsg gs ("handleSelect: " ++ show uiPos ++ show bp)) { clickHdlr = handleMove bp }
+handleSelect (EventKey _ _ _ uiPos) gs = 
+  if nextPlayer (b gs) == Player1 && 
+     isPositionInBoard (b gs) bp && 
+     isPlayerAt (b gs) Player1 bp
+    then gs { clickHdlr = handleMove bp } { hilitPosition = [bp]}
+    else gs
   where bp = uiPosToBoardPos uiPos
+handleSelect _ gs = gs
+
+handleMove origPos (EventKey _ _ _ uiPos) gs =
+  if isPositionInBoard (b gs) bp && mv `elem` legalMovesFrom (b gs) origPos
+    then (logMsg gs ("handleMove from " ++ show origPos)) { clickHdlr = handleSelect, hilitPosition = [] } { b = makeMove (b gs) mv } 
+    else resetHandlers gs
+    where
+      bp = uiPosToBoardPos uiPos
+      mv = Move origPos bp
+handleMove _ _ gs = gs
 
 highlightBP :: UIPos -> GS -> GS 
 highlightBP uiPos gs = (logMsg gs ("highlightBP: " ++ show uiPos ++ show bp)) { hilitPosition = [bp] }
   where bp = uiPosToBoardPos uiPos
 
-handleMove origPos ev gs = (logMsg gs ("handleMove from " ++ show origPos ++ " and event " ++ show ev)) { clickHdlr = handleSelect } 
-
+-- TODO: this should snap to nearest bp.  
+-- some roundings do not have a hex centred on them 
+-- e.g. (2, 0) is between (1,0) and (3,0)
 uiPosToBoardPos :: (Float, Float) -> Position
 uiPosToBoardPos (x,y) = Position (round (x' / xSpacing)) (round (y' / ySpacing))
   where 
@@ -43,21 +58,24 @@ backgroundColor = colorSea -- dark $ dark $ dark blue -- makeColor8 200 200 200 
 type ClickHandler = Event -> GS -> GS
 -- (board in play, undo list, fresh boards, log msgs)
 data GS = GS{ b::Board, undos::[Board], nextBoards::[Board], logs::[String], clickHdlr::ClickHandler, hilitPosition :: [Position]}
+resetHandlers gs = gs { clickHdlr = handleSelect, hilitPosition = [] } 
 
 handleInput :: Event -> GS -> GS
-handleInput (EventKey (Char c) Down _ _)  gs = handleChar c gs
-handleInput ev@(EventKey (MouseButton LeftButton) Down  _ _pos)  gs = (clickHdlr gs) ev gs 
-handleInput (EventMotion uiPos) gs = highlightBP uiPos gs
+handleInput (EventKey (Char c) Down _ _)  gs = handleChar c (resetHandlers gs)
+handleInput ev@(EventKey (MouseButton LeftButton) Down  _ _pos)  gs = clickHdlr gs ev gs 
+-- handleInput (EventMotion uiPos) gs = highlightBP uiPos gs
 handleInput _ gs = gs 
 type UIPos = (Float, Float)
 
 handleChar :: Char -> GS -> GS
-handleChar 'r' gs =  
-  gs { b = b', undos = (b gs):(undos gs), logs = ("random move score "++show i):logs gs}
+handleChar 'r' gs =
+  gs { b = b', undos = b gs:undos gs
+             , logs = ("random move score "++show i):logs gs}
   where (i, b') = makeRandomMoveIfUnfinished (b gs)
 
 handleChar 'b' gs = 
-  gs { b = b', undos = (b gs:undos gs), logs = ("best move scored " ++ show i):logs gs }
+  gs { b = b', undos = b gs:undos gs
+             , logs = ("best move scored " ++ show i):logs gs }
   where (i, b') = makeBestMoveIfUnfinished (b gs)
 
 handleChar 'n' gs = case nextBoards gs of
@@ -73,19 +91,12 @@ handleChar 'u' gs = case undos gs of
   (prev:others) -> gs { b = prev, undos = others }
 handleChar _ gs = gs 
 
-drawFixedPosns = Color yellow $ Pictures $ [ 
-  Translate (-450) 350 $ circleSolid 20,
-  Translate (450) (-350) $ circleSolid 20,
-  Translate (-450) (-350) $ circleSolid 20,
-  Translate (450) 350 $ circleSolid 20 ]
-
 drawState :: GS -> Picture
 drawState gs = Pictures $ 
-   drawFixedPosns :
    Translate (-100) (-100) 
    (drawPlayingArea (b gs) (hilitPosition gs)) : 
-   [ drawLines colorForText (-400,0) $  messages ]
-  where messages = concat $ ((lines . displayBoard) (b gs)) : help: [take 5 (logs gs)]
+   [ drawLines colorForText (-300,0) messages ]
+  where messages = concat $ (lines . displayBoard) (b gs) : help: [take 5 (logs gs)]
      
 help :: [String]
 help = [ "---- Keys -------------"
@@ -100,14 +111,14 @@ drawPlayingArea bd hilitPosns =
   Pictures $ [ drawIceState is | is <- M.assocs (posStateMap bd)] ++ [drawHilight (pos, posState bd pos) | pos <- hilitPosns]
 
 drawHilight :: (Position, PositionState) -> Picture
-drawHilight (p, s) = Color (makeColor8 0 255 0 100) $ Translate x y $ drawHex side
+drawHilight (p, _s) = Color (makeColor8 0 255 0 100) $ Translate x y $ drawHex side
   where (x,y) = toUiPos p
 
 iceState :: PositionState -> IceState
 iceState (PositionState istate _) = istate
 
 posText :: Position -> UIPos -> Picture
-posText (Position px py) uip = Pictures [ miniText 0 (show (px,py)) ]
+posText (Position px py) _uip = Pictures [ miniText 0 (show (px,py)) ]
                                         -- , miniText 1 (show uip)]
   where miniText row str = Translate (-20) (-15 * row)  $ Scale 0.1 0.1 $ Text str
 drawIceState :: (Position,PositionState) -> Picture

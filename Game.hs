@@ -68,6 +68,9 @@ cantMove b pl = null $ legalMovesForPlayer b pl
 nextPosition :: Position -> Direction -> Position
 nextPosition (Position x y) d = let (dx, dy) = offsets d in (Position (x + dx) (y + dy))
 
+isPlayerAt :: Board -> Player -> Position -> Bool
+isPlayerAt b pl pos = pos `elem` playerPositions b pl
+
 vacantPositions :: Board -> [Position]
 vacantPositions b = [p | p <- M.keys (posStateMap b), isVacant b p]
 
@@ -195,10 +198,10 @@ legalMovesForPlayer b player =
 
 playerPositions :: Board -> Player -> [Position]
 playerPositions b player = 
-  map fst $ filter (isInPosition . snd) . M.assocs $ posStateMap b
+  map fst $ filter (present . snd) . M.assocs $ posStateMap b
   where 
-    isInPosition (PositionState _ (Just actualPlayer)) = player == actualPlayer
-    isInPosition _ = False
+    present (PositionState _ (Just actualPlayer)) = player == actualPlayer
+    present _ = False
 
 displayBoard :: Board -> String
 displayBoard b = 
