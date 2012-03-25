@@ -8,10 +8,11 @@ import System( getArgs )
 import System.Random
 import qualified Data.Map as M
 import Shuffle
+import Control.Concurrent
 
-data Position = Position Int Int deriving (Eq, Ord)
-instance Show Position where
-  show (Position x y) = "(" ++ show x ++ ","++show y++")"
+data Position = Position Int Int deriving (Eq, Ord, Show, Read)
+-- instance Show Position where
+--  show (Position x y) = "(" ++ show x ++ ","++show y++")"
 
 type Strategy = (Board -> Maybe (Int, Move))
 data StrategyName = Best | Rnd deriving (Show, Read, Eq)
@@ -230,6 +231,24 @@ defaultDepth = 5
 
 bestMove :: Depth -> Board -> [Move] -> (Int, Move)
 bestMove depth b ms = maximumBy (comparing fst) $ mapAnnotate (negamax depth . makeMove b) ms
+
+-- (experiment)
+-- one 2 core, this seems to give us 50% speed up.
+-- It's not pure.  Not sure how to integrate with gloss's pure callbacks
+bestMoveConcurrent :: Depth -> Board -> [Move] -> IO (Int, Move)
+bestMoveConcurrent d b ms = do
+  let (ms1, ms2) = splitAt (length ms `div` 2) ms
+
+  m <- newEmptyMVar
+  forkIO $ do
+    let res2 = bestMove d b ms2
+    print ("done2: ",res2)  -- force the bestMove to be eval'd
+    putMVar m res2
+
+  let one = bestMove d b ms1
+  print ("done1: ",one) -- get our work done before blocking on thread2's finishing
+  two <- takeMVar m
+  return $ maximumBy (comparing fst) $ [one,two]
 
 -- from point of view of the player who made the last move
 negamax :: Int -> Board -> Int
