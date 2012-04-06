@@ -344,5 +344,4 @@ nonguimain = do
 -- stuck penguins from the board will allow us to ask simply "any available moves" for isGameOver impl.
 -- TODO: parallelize the search.  (will make ab pruning less effective)
 -- TODO: Add ab pruning to the minimax.
--- TODO: let the user play.
 -- TODO: If we are not connected to the enemy, adversarial search can stop.
