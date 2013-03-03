@@ -1,15 +1,18 @@
 module Gui where
-import Graphics.Gloss.Interface.Game
+import Graphics.Gloss
 import qualified Data.Map as M
 import Game hiding (main)
+import Graphics.Gloss.Interface.Pure.Game
 
 main = guimain
 guimain = do
   (start:bs) <- mapM (const $ initRandomBoard 6 6 4) ([1..9]::[Int])
-  gameInWindow 
-          "Hey That's My Fish - Haskell UI" --name of the window
-          (700,600) -- initial size of the window
-          (0, 0) -- initial position of the window
+-- http://hackage.haskell.org/packages/archive/gloss/1.7.8.2/doc/html/Graphics-Gloss.html#v:play
+  play 
+          (InWindow "Hey That's My Fish - Haskell UI" --name of the window
+            (700,600) -- initial size of the window
+            (0, 0) -- initial position of the window
+          )
           backgroundColor   -- background colour
           30 -- number of simulation steps to take for each second of real time
           (GS start [] bs [] handleSelect []) -- the initial world

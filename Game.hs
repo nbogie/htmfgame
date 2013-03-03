@@ -4,7 +4,7 @@ import Control.Monad (when)
 import Data.List (maximumBy)
 import Data.Ord (comparing)
 import Data.Maybe (fromMaybe)
-import System( getArgs )
+import System.Environment( getArgs )
 import System.Random
 import qualified Data.Map as M
 import Shuffle

@@ -1,21 +1,22 @@
+-- http://www.haskell.org/haskellwiki/Random_shuffle 
 module Shuffle where
-import Random
-import Data.Array.IO
 
---
--- Knuth-Fisher-Yates shuffling algorithm
--- Impl due to Pedro Vasconcelos
---
+import System.Random
+import Data.Array.IO
+import Control.Monad
+ 
+-- | Randomly shuffle a list
+--   /O(N)/
 shuffleIO :: [a] -> IO [a]
-shuffleIO xs
-    = do { arr <- newListArray (0,n) [0..n] :: IO (IOUArray Int Int)  
-         ; sequence_ [do { j<-randomRIO (i,n)
-                         ; t1<-readArray arr i
-                         ; t2<-readArray arr j
-                         ; writeArray arr i t2
-                         ; writeArray arr j t1                            
-                         } | i<-[0..n-1]]
-         ; sequence [do j<-readArray arr i
-                        return (xs!!j)  | i<-[0..n]]
-         }
-    where n = length xs - 1
+shuffleIO xs = do
+        ar <- newArray n xs
+        forM [1..n] $ \i -> do
+            j <- randomRIO (i,n)
+            vi <- readArray ar i
+            vj <- readArray ar j
+            writeArray ar j vi
+            return vj
+  where
+    n = length xs
+    newArray :: Int -> [a] -> IO (IOArray Int a)
+    newArray n xs =  newListArray (1,n) xs
