@@ -1,4 +1,5 @@
 *.hi
+cabal-dev
 *.o
 *.swp
 Main
