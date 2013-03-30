@@ -78,7 +78,14 @@ type ClickHandler = Event -> GS -> GS
 -- (board in play, undo list, fresh boards, log msgs)
 data GameMode = SplashScreen | GamePlay deriving (Show, Eq)
 
-data GS = GS{ b::Board, undos::[Board], nextBoards::[Board], logs::[String], clickHdlr::ClickHandler, hilitPosition :: [Position], gameMode :: GameMode}
+data GS = GS { b             :: Board
+             , undos         :: [Board]
+             , nextBoards    :: [Board]
+             , logs          :: [String]
+             , clickHdlr     :: ClickHandler
+             , hilitPosition :: [Position]
+             , gameMode      :: GameMode 
+             }
 resetHandlers gs = gs { clickHdlr = handleSelect, hilitPosition = [] } 
 
 handleInputInSplash :: Event -> GS -> GS
