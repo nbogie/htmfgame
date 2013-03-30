@@ -30,7 +30,9 @@ data Direction = NE | E | SE | SW | W | NW deriving (Show, Eq, Ord, Enum, Bounde
 
 data Player = Player1| Player2 deriving (Show, Eq, Ord, Enum, Bounded)
 
+playedLast ::  Board -> Player
 playedLast = otherPlayer . nextPlayer
+players ::  [Player]
 players = [minBound .. maxBound]
 
 data Move = Move Position Position deriving (Eq)
@@ -51,8 +53,10 @@ updateScoreMap f b = b { scoreMap = f $ scoreMap b }
 
 updatePosStateMap :: (PosStateMap -> PosStateMap) -> Board -> Board
 updatePosStateMap f b = b { posStateMap = f $ posStateMap b }
+setPosStateMap ::  Board -> PosStateMap -> Board
 setPosStateMap b m = b { posStateMap = m }
 
+isPositionInBoard ::  Board -> Position -> Bool
 isPositionInBoard b p = M.member p $ posStateMap b
 
 legalPositionsFrom :: Board -> Position -> [Position]
@@ -83,18 +87,22 @@ posState b p =
 isVacant :: Board -> Position  -> Bool
 isVacant b p = isPositionInBoard b p && isIcePresent b p && not (isPenguinPresent b p)
 
+isIcePresent ::  Board -> Position -> Bool
 isIcePresent b p = 
   case posState b p of
     (PositionState (Ice _) _) -> True
     _ -> False
 
+isPenguinPresent ::  Board -> Position -> Bool
 isPenguinPresent b p = 
   case posState b p of
     (PositionState _ (Just _)) -> True
     _ -> False
   
+directions ::  [Direction]
 directions = [minBound .. maxBound]
 
+offsets ::  (Num t1, Num t) => Direction -> (t, t1)
 offsets NE = (1, 1)
 offsets E = (2, 0)
 offsets SE = (1, -1)
@@ -138,6 +146,7 @@ makeBestMoveIfUnfinished = makeMoveIfUnfinished pickBestMove
 makeRandomMoveIfUnfinished :: Board -> (Int, Board)
 makeRandomMoveIfUnfinished = makeMoveIfUnfinished pickRandomMove
 
+makeMoveIfUnfinished :: Num t => (Board -> Maybe (t, Move)) -> Board -> (t, Board)
 makeMoveIfUnfinished strat b = case strat b of
   Nothing -> (0, togglePlayer b)
   Just (i,m) -> (i, makeMove b m)
@@ -156,7 +165,9 @@ makeMove b (Move p1 p2) =
     (ps1Bad, ps2Bad) -> 
        error $ show ("Bad pos states ", ps1Bad, ", ", ps2Bad, " at ", p1, " and ", p2)
 
-diag f (x,y) = (f x, f y)
+    where diag f (x,y) = (f x, f y)
+
+difference ::  Num a => (t -> a) -> (t, t) -> a
 difference f (a,b) = f a - f b
 
 fishCountAt :: Position -> Board -> Int
@@ -166,16 +177,20 @@ fishCountAt p b = case posState b p of
 -- for each player, for each penguin position.  if there are no moves possible
 -- for that penguin, remove that penguin, attributing score as necessary.
 
+stuckPenguins ::  Board -> [(Player, Position, Int)]
 stuckPenguins b = [(pl,pos,fc) | pl <- players, pos <- playerPositions b pl, 
                                  let fc = fishCountAt pos b, cantMoveFrom pos b ]
 
+removeAllLostPenguins ::  Board -> Board
 removeAllLostPenguins b = 
   foldl (\b' (pl, pos, fc) -> removeAndScore pos pl fc b') b (stuckPenguins b)
 
+removeAndScore ::  Position -> Player -> Int -> Board -> Board
 removeAndScore pos pl fc b = 
   incrementFishCount pl fc .  
   updatePosStateMap (M.adjust moveOffState pos) $ b
 
+otherPlayer ::  Player -> Player
 otherPlayer Player1 = Player2
 otherPlayer Player2 = Player1
 
@@ -211,6 +226,7 @@ displayBoard b =
       else "Next to play " ++ show (nextPlayer b)
   , "Scores: " ++ show (M.assocs (scoreMap b)) ]
 
+isGameOver ::  Board -> Bool
 isGameOver b = all (cantMove b) players
 
 pickRandomMove :: Board -> Maybe (Int, Move)
@@ -218,6 +234,7 @@ pickRandomMove b = case legalMovesForPlayer b (nextPlayer b) of
   [] -> Nothing
   (m:_) -> Just (0, m)
 
+pickBestMove ::  Board -> Maybe (Int, Move)
 pickBestMove b = 
   if isGameOver b 
   then Nothing
@@ -226,6 +243,7 @@ pickBestMove b =
     ms -> Just $ bestMove defaultDepth b ms
 
 type Depth = Int
+defaultDepth ::  Depth
 defaultDepth = 5
 
 bestMove :: Depth -> Board -> [Move] -> (Int, Move)
@@ -244,6 +262,7 @@ negamax depth b
                   [] -> negate $ negamax (depth-1) (togglePlayer b)
                   ms -> negate $ fst $ bestMove (depth-1) b ms
 
+fishScoreDeltaForLastPlayer ::  Board -> Int
 fishScoreDeltaForLastPlayer b = difference (scoreFor b) (playedLast b, nextPlayer b)
 
 mapAnnotate :: (a -> b) -> [a] -> [(b, a)]
@@ -302,7 +321,10 @@ autoplay logging strat otherStrat b =
     debug = logIt Debug; info = logIt Info
     logIt level = if logging <= level then putStrLn else const $ return ()
 
+main ::  IO Board
 main = nonguimain
+
+nonguimain ::  IO Board
 nonguimain = do
   args <- getArgs
   case args of

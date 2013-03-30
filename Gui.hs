@@ -6,19 +6,35 @@ import Graphics.Gloss.Interface.Pure.Game
 
 main = guimain
 guimain = do
+  
   (start:bs) <- mapM (const $ initRandomBoard 6 6 4) ([1..9]::[Int])
--- http://hackage.haskell.org/packages/archive/gloss/1.7.8.2/doc/html/Graphics-Gloss.html#v:play
+  -- http://hackage.haskell.org/packages/archive/gloss/1.7.8.2/doc/html/Graphics-Gloss.html#v:play
   play 
-          (InWindow "Hey That's My Fish - Haskell UI" --name of the window
+          (InWindow "Penguins, Fish, Ice - Haskell UI" --name of the window
             (700,600) -- initial size of the window
             (0, 0) -- initial position of the window
           )
           backgroundColor   -- background colour
           30 -- number of simulation steps to take for each second of real time
-          (GS start [] bs [] handleSelect []) -- the initial world
-          drawState -- A function to convert the world into a picture
-          handleInput -- A function to handle input events
+          (initialGameState start bs)  -- the initial world
+          drawStateMgr  -- A function to convert the world into a picture
+          handleInputMgr -- A function to handle input events
           (const id)
+
+initialGameState ::  Board -> [Board] -> GS
+initialGameState start bs = (GS start [] bs [] handleSelect [] SplashScreen)
+
+drawStateMgr :: GS -> Picture
+drawStateMgr gs = draw (gameMode gs) $ gs
+  where
+    draw GamePlay     = drawStateInGame
+    draw SplashScreen = drawStateSplash
+
+handleInputMgr :: Event -> GS -> GS
+handleInputMgr evt gs =  (handle (gameMode gs)) evt gs
+  where
+    handle GamePlay     = handleInputInGame
+    handle SplashScreen = handleInputInSplash
 
 handleSelect :: ClickHandler
 handleSelect (EventKey _ _ _ uiPos) gs = 
@@ -60,14 +76,20 @@ backgroundColor = colorSea -- dark $ dark $ dark blue -- makeColor8 200 200 200 
 
 type ClickHandler = Event -> GS -> GS
 -- (board in play, undo list, fresh boards, log msgs)
-data GS = GS{ b::Board, undos::[Board], nextBoards::[Board], logs::[String], clickHdlr::ClickHandler, hilitPosition :: [Position]}
+data GameMode = SplashScreen | GamePlay deriving (Show, Eq)
+
+data GS = GS{ b::Board, undos::[Board], nextBoards::[Board], logs::[String], clickHdlr::ClickHandler, hilitPosition :: [Position], gameMode :: GameMode}
 resetHandlers gs = gs { clickHdlr = handleSelect, hilitPosition = [] } 
 
-handleInput :: Event -> GS -> GS
-handleInput (EventKey (Char c) Down _ _)  gs = handleChar c (resetHandlers gs)
-handleInput ev@(EventKey (MouseButton LeftButton) Down  _ _pos)  gs = clickHdlr gs ev gs 
--- handleInput (EventMotion uiPos) gs = highlightBP uiPos gs
-handleInput _ gs = gs 
+handleInputInSplash :: Event -> GS -> GS
+handleInputInSplash (EventKey (Char _) Down _ _)  gs = gs { gameMode = GamePlay }
+handleInputInSplash _ gs = gs 
+
+handleInputInGame :: Event -> GS -> GS
+handleInputInGame (EventKey (Char c) Down _ _)  gs = handleChar c (resetHandlers gs)
+handleInputInGame ev@(EventKey (MouseButton LeftButton) Down  _ _pos)  gs = clickHdlr gs ev gs 
+-- handleIneputInGame (EventMotion uiPos) gs = highlightBP uiPos gs
+handleInputInGame _ gs = gs 
 type UIPos = (Float, Float)
 
 handleChar :: Char -> GS -> GS
@@ -93,9 +115,13 @@ handleChar 'u' gs = case undos gs of
   []            -> gs
   (prev:others) -> gs { b = prev, undos = others }
 handleChar _ gs = gs 
+drawStateSplash :: GS -> Picture
+drawStateSplash _gs = 
+   Pictures [ drawLines colorForText (-200,0) ["Penguins, Fish, Ice.  Press any key to start!"] ]
+  
 
-drawState :: GS -> Picture
-drawState gs = Pictures $ 
+drawStateInGame :: GS -> Picture
+drawStateInGame gs = Pictures $ 
    Translate (-100) (-100) 
    (drawPlayingArea (b gs) (hilitPosition gs)) : 
    [ drawLines colorForText (-300,0) messages ]
