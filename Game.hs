@@ -117,18 +117,18 @@ legalMovesInDirection b origPos d =
     else []
   where nextPos = nextPosition origPos d
 
-addRandomPlayers :: Int -> Board -> IO Board
-addRandomPlayers nPieces b = do
-  rndPosns <- shuffleIO (vacantPositions b)
-  let pps = zip (cycle players) (take nPieces rndPosns)
-  return $ updatePosStateMap (\m -> foldl addPlayerAtPos m pps) b
+addRandomPlayers :: RandomGen g => g -> Int -> Board -> (Board, g)
+addRandomPlayers g nPieces b = (b', g')
+  where
+    (rndPosns, g') = shuffle g (vacantPositions b)
+    b' = updatePosStateMap (\m -> foldl addPlayerAtPos m pps) b
+    pps = zip (cycle players) (take nPieces rndPosns)
 
-initRandomBoard :: Int -> Int -> Int -> IO Board
-initRandomBoard w h nPieces = do
-  rndNs <- fmap (randomRs (1,3)) getStdGen
-  let b = Board (w, h) Player1 initScoreMap (initPSM rndNs)
-  addRandomPlayers nPieces b
+initRandomBoard :: RandomGen g => g -> Int -> Int -> Int -> (Board, g)
+initRandomBoard g w h nPieces = addRandomPlayers g nPieces b
   where 
+    rndNs = randomRs (1,3) g
+    b = Board (w, h) Player1 initScoreMap (initPSM rndNs)
     initScoreMap   = M.fromList (zip players (repeat 0))
     initPSM iceNs  = M.fromList (zip hexGrid (map mkpos iceNs))
       where
@@ -327,10 +327,11 @@ main = nonguimain
 nonguimain ::  IO Board
 nonguimain = do
   args <- getArgs
+  gen  <- getStdGen
   case args of
     [w,h,nPieces,strat1,strat2,logLevel] -> do
       let logging = (read logLevel)
-      b <- initRandomBoard (read w) (read h) (read nPieces)
+      let (b, _gen') = initRandomBoard gen (read w) (read h) (read nPieces)
       when (logging <= Info) $ 
         putStrLn $ "Starting with strategies: " ++ strat1 ++ ", " ++ strat2 ++ " on a board of dimensions " ++ show (w,h) ++ " with " ++ show nPieces ++ " pieces"
       autoplay logging (stratFor $ read strat1) (stratFor $ read strat2) b

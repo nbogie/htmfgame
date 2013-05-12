@@ -1,22 +1,22 @@
 -- http://www.haskell.org/haskellwiki/Random_shuffle 
-module Shuffle where
+module Shuffle (shuffle) where
 
 import System.Random
-import Data.Array.IO
-import Control.Monad
- 
--- | Randomly shuffle a list
---   /O(N)/
-shuffleIO :: [a] -> IO [a]
-shuffleIO xs = do
-        ar <- nuArray n xs
-        forM [1..n] $ \i -> do
-            j <- randomRIO (i,n)
-            vi <- readArray ar i
-            vj <- readArray ar j
-            writeArray ar j vi
-            return vj
+import Data.Map hiding (foldl)
+
+fisherYatesStep :: RandomGen g => (Map Int a, g) -> (Int, a) -> (Map Int a, g)
+fisherYatesStep (m, gen) (i, x) = ((insert j x . insert i (m ! j)) m, gen')
   where
-    n = length xs
-    nuArray :: Int -> [a] -> IO (IOArray Int a)
-    nuArray len ys =  newListArray (1,len) ys
+    (j, gen') = randomR (0, i) gen
+ 
+fisherYates :: RandomGen g => g -> [a] -> ([a], g)
+fisherYates gen [] = ([], gen)
+fisherYates gen l = 
+  toElems $ foldl fisherYatesStep (initial (head l) gen) (numerate (tail l))
+  where
+    toElems (x, y) = (elems x, y)
+    numerate = zip [1..]
+    initial x g = (singleton 0 x, g)
+
+shuffle :: RandomGen g => g -> [a] -> ([a], g)
+shuffle = fisherYates

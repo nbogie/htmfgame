@@ -1,13 +1,15 @@
 module Gui where
-import Graphics.Gloss
 import qualified Data.Map as M
 import Game hiding (main)
 import Graphics.Gloss.Interface.Pure.Game
+import System.Random(getStdGen,StdGen)
+
+initStandardRandomBoard gen = initRandomBoard gen 6 6 4
 
 main = guimain
 guimain = do
-  
-  (start:bs) <- mapM (const $ initRandomBoard 6 6 4) ([1..9]::[Int])
+  gen <- getStdGen 
+  let (start, gen') = initStandardRandomBoard gen
   -- http://hackage.haskell.org/packages/archive/gloss/1.7.8.2/doc/html/Graphics-Gloss.html#v:play
   play 
           (InWindow "Penguins, Fish, Ice - Haskell UI" --name of the window
@@ -16,13 +18,13 @@ guimain = do
           )
           backgroundColor   -- background colour
           30 -- number of simulation steps to take for each second of real time
-          (initialGameState start bs)  -- the initial world
+          (initialGameState start gen')  -- the initial world
           drawStateMgr  -- A function to convert the world into a picture
           handleInputMgr -- A function to handle input events
           (const id)
 
-initialGameState ::  Board -> [Board] -> GS
-initialGameState start bs = (GS start [] bs [] handleSelect [] SplashScreen)
+initialGameState ::  Board -> StdGen -> GS
+initialGameState start gen = (GS start [] [] handleSelect [] SplashScreen gen)
 
 drawStateMgr :: GS -> Picture
 drawStateMgr gs = draw (gameMode gs) $ gs
@@ -75,16 +77,16 @@ logMsg gs msg = gs { logs = take 5 (msg : logs gs) }
 backgroundColor = colorSea -- dark $ dark $ dark blue -- makeColor8 200 200 200 100
 
 type ClickHandler = Event -> GS -> GS
--- (board in play, undo list, fresh boards, log msgs)
+
 data GameMode = SplashScreen | GamePlay deriving (Show, Eq)
 
 data GS = GS { b             :: Board
              , undos         :: [Board]
-             , nextBoards    :: [Board]
              , logs          :: [String]
              , clickHdlr     :: ClickHandler
              , hilitPosition :: [Position]
              , gameMode      :: GameMode 
+             , rndGen        :: StdGen
              }
 resetHandlers gs = gs { clickHdlr = handleSelect, hilitPosition = [] } 
 
@@ -110,9 +112,8 @@ handleChar 'b' gs =
              , logs = ("best move scored " ++ show i):logs gs }
   where (i, b') = makeBestMoveIfUnfinished (b gs)
 
-handleChar 'n' gs = case nextBoards gs of
-  []            -> gs
-  (next:others) -> gs { b = next,  nextBoards = others, undos = [] } 
+handleChar 'n' gs = gs { b = next, undos = [], rndGen = gen' } 
+  where (next,gen') = initStandardRandomBoard (rndGen gs)
 
 handleChar 'a' gs = case undos gs of
   []            -> gs
@@ -140,7 +141,7 @@ help = [ "---- Keys -------------"
        , "b - make Best move"
        , "a - start same board Again"
        , "u - Undo move"
-       , "n - New board (limited)" ]
+       , "n - New board" ]
 
 drawPlayingArea ::  Board -> [Position] -> Picture
 drawPlayingArea bd hilitPosns = 
